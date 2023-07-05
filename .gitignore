@@ -1,0 +1,4 @@
+secret.py
+test
+*.pyc
+db.sqlite3
