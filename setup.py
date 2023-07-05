@@ -18,11 +18,11 @@ setup(
 	license					= license,
 	author					= "Yongyi Yang",
 	python_requires			= ">=3.6",
-	packages				= ["egoserver", "localserver", "locallib"],
+	packages				= ["egoserver", "egolocal", "egorovsystem"],
 	install_requires		= reqs.strip().split("\n"),
 	entry_points			= {"console_scripts": [
-		"egoserver-init=egoserver.run:init"
-		"egoserver-run=egoserver.run:run"
-		"egolocal=localserver.main:run"
+		"egoserver-init=egoserver.run:init" , 
+		"egoserver-run=egoserver.run:run" , 
+		"egolocal-run=egolocal.main:run" , 
 	]}
 )

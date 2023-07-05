@@ -2,3 +2,6 @@ secret.py
 test
 *.pyc
 db.sqlite3
+*.egg-info
+dist
+build
