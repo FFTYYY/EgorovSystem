@@ -40,7 +40,7 @@ def get_variable(request , key):
         "errorflag": False , 
     })
 
-def get_fucntion(request , key):
+def get_function(request , key):
 
     flag, info = check_password(request)
     if flag == 0:

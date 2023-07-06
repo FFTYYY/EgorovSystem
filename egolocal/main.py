@@ -17,6 +17,8 @@ def ask_ip(): # 这个函数向环境变量中询问远端的地址
     return server_ip.strip()
 
 def ask_password(): # 这个函数询问密码
+    if os.environ.get("EGOROV_PWD"): # 只在个人计算机上存密码
+        return os.environ["EGOROV_PWD"]
     return input("password = ").strip()
 
 def get_data(server_ip, password, key, type):
@@ -37,8 +39,10 @@ def run():
         return get_data(server_ip, password, key, "variable")
     def ask_function(request, key):
         return get_data(server_ip, password, key, "function")
-
+    def hello(request):
+        return "hello"
     start_server(ip = "127.0.0.1" , port = C.port , responsers = {
+        "hello":  hello, 
         "ask_variable/<str:key>":  ask_variable, 
         "ask_function/<str:key>":  ask_function, 
     } , encode = "json" , cross_domain = True)

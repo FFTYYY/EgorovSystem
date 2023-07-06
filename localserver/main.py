@@ -17,6 +17,8 @@ def ask_ip(): # 这个函数向环境变量中询问远端的地址
     return server_ip.strip()
 
 def ask_password(): # 这个函数询问密码
+    if os.environ["EGOROV_PWD"]: # 只在个人计算机上存密码
+        return os.environ["EGOROV_PWD"]
     return input("password = ").strip()
 
 def get_data(server_ip, password, key, type):
