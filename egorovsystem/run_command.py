@@ -19,4 +19,6 @@ def run():
 
 if __name__ == "__main__":
     sys.argv = ["", "test"]
+    run()    
+    sys.argv = ["", "test_python"]
     run()
