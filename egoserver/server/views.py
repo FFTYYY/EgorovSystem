@@ -61,8 +61,11 @@ def get_function(request , key):
 
 
     return JsonResponse({
-        "val": val , 
-        "val_raw": val_raw , 
+        "val": {
+            "content": val , 
+            "type": fun.type , 
+        } , 
+        "content_raw": val_raw , 
         "errorflag": False , 
     })
 

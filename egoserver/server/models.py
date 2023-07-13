@@ -12,6 +12,7 @@ class Variable(models.Model):
 class Function(models.Model):
     key = models.TextField(default = "", blank = True, null = True)
     val = models.TextField(default = "", blank = True, null = True)
+    type = models.TextField(default = "cmd", blank = True, null = True)
 
     def __str__(self):
         return str(self.key)
