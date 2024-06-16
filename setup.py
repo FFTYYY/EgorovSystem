@@ -19,7 +19,7 @@ print(pkgs)
 
 setup(
 	name					= "egorovsystem",
-	version					= "0.0.8",
+	version					= "0.0.9.post5",
 	description				= "",
 	long_description		= readme,
 	long_description_content_type	= "text/markdown",
@@ -34,5 +34,6 @@ setup(
 		"egoserver-run=egoserver.run:run" , 
 		"egolocal-run=egolocal.main:run" , 
 		"EGO=egorovsystem.run_command:run" , 
+		"egoserver-setnginx=egoserver_setnginx.main:run" , 
 	]} ,
 )
