@@ -2,7 +2,15 @@ import requests
 import os
 from pprint import pprint
 
-def get_data_fromlocal(ip,port,function,key): # 这个函数通过本地egolocal进程来跟远端通信（在不信任的环境下）
+_memory = {}
+def set_variable(key: str, val: str):
+    '''设置内存变量'''
+
+    _memory[key] = val
+
+def get_data_fromlocal(ip,port,function,key): 
+    '''这个函数通过本地egolocal进程来跟远端通信（在不信任的环境下）'''
+
     resp = requests.post("http://{0}:{1}/{2}/{3}".format(ip,port,function,key)).json()
     if resp["errorflag"]:
         raise RuntimeError(resp["errormsg"])
@@ -10,7 +18,9 @@ def get_data_fromlocal(ip,port,function,key): # 这个函数通过本地egolocal
 
     return val
 
-def get_data_fromenv(server_ip,password,type,key): # 这个函数通过环境变量来跟远端通信（在信任的环境下）
+def get_data_fromenv(server_ip,password,type,key):
+    '''这个函数通过环境变量来跟远端通信（在信任的环境下）'''
+
     resp = requests.post("http://{0}/get/{1}/{2}".format(server_ip, type, key), json = {"password": password}).json()
     if resp["errorflag"]:
         raise RuntimeError(resp["errormsg"])
@@ -18,6 +28,12 @@ def get_data_fromenv(server_ip,password,type,key): # 这个函数通过环境变
     return val
 
 def get_data(port, local_ip, server_ip, password , type, key):
+
+    # 如果内存里已经设置了值，就用内存中的值。
+    _from_memo = _memory.get(key) 
+    if _from_memo is not None:   
+        return _from_memo
+
     server_ip = server_ip or os.environ.get("EGOROV_SERVER")
     password = password or os.environ.get("EGOROV_PWD")
     if server_ip and password: # 如果传入了server_ip和密码，或者这两个能从环境变量里找到，那就直接用这个跟远端通信。
@@ -26,6 +42,7 @@ def get_data(port, local_ip, server_ip, password , type, key):
     # 跟本地进程通信
     function = "ask_{0}".format(type)
     return get_data_fromlocal(local_ip, port, function, key)
+
 
 
 def get_variable(key, port = 11451, local_ip = "127.0.0.1", server_ip = None,password = None):

@@ -19,7 +19,7 @@ print(pkgs)
 
 setup(
 	name					= "egorovsystem",
-	version					= "0.0.9.post5",
+	version					= "0.0.9.post6",
 	description				= "",
 	long_description		= readme,
 	long_description_content_type	= "text/markdown",
