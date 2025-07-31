@@ -20,4 +20,4 @@ def run():
 	C = C.parse_args()
 
 	python_run_file("manage.py migrate")
-	python_run_file("manage.py runserver 0.0.0.0:%d" % (C.port))
+	os.system(f"gunicorn --workers 3 egoserver.wsgi:application --bind 127.0.0.1:{C.port}")
