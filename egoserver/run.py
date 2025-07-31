@@ -20,4 +20,5 @@ def run():
 	C = C.parse_args()
 
 	python_run_file("manage.py migrate")
-	os.system(f"gunicorn --workers 3 egoserver.wsgi:application --bind 127.0.0.1:{C.port}")
+	python_run_file("manage.py collectstatic --noinput")
+	os.system(f"gunicorn --workers 3 egoserver.wsgi:application --bind 0.0.0.0:{C.port}")
