@@ -11,6 +11,7 @@
 #   EGOROV_SOURCE    pip requirement, wheel or source directory (default: egorovsystem[server]>=1.0)
 #   EGOROV_PORT      local port the server listens on (default: 7999, bound to 127.0.0.1 only)
 #   TUNNEL_TOKEN     token of a remotely managed Cloudflare Tunnel
+#   INSTALL_CLOUDFLARED  1 to install cloudflared without a token (register it later yourself)
 #   ENABLE_FIREWALL  1 to enable ufw with only SSH allowed in
 set -euo pipefail
 
@@ -152,7 +153,7 @@ if [ "$INITIALIZED" = 1 ]; then
 fi
 
 # ------------------------------------------------------------------ Cloudflare Tunnel
-if [ -n "${TUNNEL_TOKEN:-}" ]; then
+if [ -n "${TUNNEL_TOKEN:-}" ] || [ "${INSTALL_CLOUDFLARED:-0}" = 1 ]; then
   log "Installing cloudflared from Cloudflare's apt repository"
   install -d -m 0755 /usr/share/keyrings
   curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg
@@ -162,17 +163,25 @@ if [ -n "${TUNNEL_TOKEN:-}" ]; then
   apt-get install -y -qq cloudflared >/dev/null
   if [ -f /etc/systemd/system/cloudflared.service ]; then
     log "cloudflared is already installed as a service; leaving its token unchanged"
-  else
+  elif [ -n "${TUNNEL_TOKEN:-}" ]; then
     cloudflared service install "$TUNNEL_TOKEN"
   fi
-  systemctl enable -q --now cloudflared
+  if [ -f /etc/systemd/system/cloudflared.service ]; then
+    systemctl enable -q --now cloudflared
+  else
+    log "cloudflared installed; connect it with: sudo cloudflared service install <tunnel token>"
+  fi
 fi
 
 # ------------------------------------------------------------------ firewall
 if [ "${ENABLE_FIREWALL:-0}" = 1 ]; then
   log "Enabling ufw: deny all inbound except SSH"
   apt-get install -y -qq ufw >/dev/null
-  SSH_PORTS="$(ss -tlnpH 2>/dev/null | awk '/sshd/ {n = split($4, a, ":"); print a[n]}' | sort -u)"
+  # sshd itself, plus ssh.socket for systemd socket activation (Ubuntu 22.10+)
+  SSH_PORTS="$( {
+      ss -tlnpH 2>/dev/null | awk '/"sshd"/ {n = split($4, a, ":"); print a[n]}'
+      systemctl show -p Listen ssh.socket 2>/dev/null | grep -oE '[0-9]+ \(Stream\)' | tr -dc '0-9\n'
+    } | grep -E '^[0-9]+$' | sort -u)"
   if [ -z "$SSH_PORTS" ]; then
     # Do not guess: a wrong port here would lock you out of the server.
     die "could not find the port sshd listens on; skipping the firewall. Configure ufw by hand."
