@@ -23,9 +23,9 @@
 
 Cloudflare 面板的菜单名称偶尔会调整，以下按 2026 年的界面描述。
 
-1. 打开 Cloudflare 面板，进入 **Zero Trust → Networks → Tunnels**，选择 **Create a tunnel**。
+1. 打开 Cloudflare 面板，进入 **Networking → Tunnels**，选择 **Create a tunnel**。
 2. 类型选 **Cloudflared**，名字填 `egorov`。
-3. 操作系统选 **Debian**。页面会给出一条安装命令，**不要运行它**，只复制 `service install` 后面那串以 `eyJ` 开头的长令牌。安装脚本会替你完成这一步。
+3. 操作系统选 **Debian**，Ubuntu 也选它。页面会给出一条安装命令，**不要运行它**，只复制 `service install` 后面那串以 `eyJ` 开头的长令牌。选哪个系统都不影响令牌，安装脚本会替你完成安装。
 4. 在隧道的 **Routes** 里选择 **Add route → Published application**：
    * Subdomain 填 `egorov`，Domain 选你的域名；
    * Service URL 填 `http://localhost:7999`。
@@ -63,7 +63,7 @@ sudo EGOROV_SOURCE=./egorovsystem-1.0.0-py3-none-any.whl TUNNEL_TOKEN='eyJ...' b
 | --- | --- | --- |
 | SSL/TLS → Edge Certificates | 开启 **Always Use HTTPS**；**Minimum TLS Version** 设为 1.2；开启 TLS 1.3 | 拒绝明文和旧协议 |
 | SSL/TLS → Edge Certificates | 开启 **HSTS**，max-age 至少 6 个月。只有当域名下所有子域都支持 HTTPS 时才勾选 includeSubDomains | 浏览器以后只走 HTTPS |
-| Zero Trust → Access → Applications | 新建 **Self-hosted** 应用，包含两个路径：`egorov.example.com/admin` 和 `egorov.example.com/api/v1/admin`。策略设为只允许你的邮箱，登录方式用一次性验证码 | 后台多一道与 Egorov 无关的门。**不要**覆盖 `/api/v1/device`，否则设备无法访问 |
+| Zero Trust → Access controls → Applications | 选 **Create new application → Self-hosted and private**，用 **Add public hostname** 添加两个路径：`egorov.example.com/admin` 和 `egorov.example.com/api/v1/admin`。策略设为只允许你的邮箱，登录方式用一次性验证码 | 后台多一道与 Egorov 无关的门。**不要**覆盖 `/api/v1/device`，否则设备无法访问 |
 | Security → WAF → Rate limiting rules | 对 `/api/v1/admin/login` 和 `/api/v1/admin/prelogin` 限流，按套餐允许的最严格值设置 | 和服务端自身的限流叠加 |
 | Speed / Scrape Shield / Zaraz | 对这个子域关闭 **Rocket Loader**、**Email Address Obfuscation**、**Zaraz** 和 Web Analytics 的自动注入 | 这些功能会往页面里插脚本。CSP 会拦截它们，而且端到端加密的后台不应该被任何人改动 |
 | Security → Bots | 如果设备访问时收到 403 或质询页面，关闭 **Bot Fight Mode**，或为 `/api/v1/device/*` 设置例外 | 设备是命令行程序，过不了浏览器质询 |
