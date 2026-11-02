@@ -59,10 +59,11 @@ sudo EGOROV_SOURCE=./egorovsystem-1.0.0-py3-none-any.whl TUNNEL_TOKEN='eyJ...' b
 
 ## 第 3 步：Cloudflare 设置
 
-**只做两件事，都只作用于 Egorov 的子域，不会影响同一个账号下的其他服务。** 不需要修改任何整域设置，比如 Always Use HTTPS、最低 TLS 版本、Rocket Loader 或 Bot Fight Mode。
+**必须做的只有隧道和路由，见第 1 步。** 它只作用于 Egorov 的子域，不会影响同一个账号下的其他服务。不需要修改任何整域设置，比如 Always Use HTTPS、最低 TLS 版本、Rocket Loader 或 Bot Fight Mode。
 
-1. **隧道和路由**：见第 1 步。
-2. **用 Access 保护后台**：进入 **Zero Trust → Access controls → Applications**，选 **Create new application → Self-hosted and private**，用 **Add public hostname** 添加两条：子域 `egorov`、路径 `admin`；子域 `egorov`、路径 `api/v1/admin`。策略设为 Allow，只包含你的邮箱，登录方式用 One-time PIN。**不要**覆盖整个子域，否则设备无法读取数据。
+登录后台本身已经有主密码、服务端限流和两步验证。**请在后台“设置”里开启两步验证。**
+
+**可选：用 Access 再加一道门。** 它让陌生人连登录页都看不到，适合想要多一层防护的情况。做法是进入 **Zero Trust → Access controls → Applications**，选 **Create new application → Self-hosted and private**，用 **Add public hostname** 添加两条：子域 `egorov`、路径 `admin`；子域 `egorov`、路径 `api/v1/admin`。策略设为 Allow，只包含你的邮箱，登录方式用 One-time PIN。**不要**覆盖整个子域，否则设备无法读取数据。
 
 其余的事由 Egorov 自己处理，所以不必改 Cloudflare：
 
@@ -73,7 +74,7 @@ sudo EGOROV_SOURCE=./egorovsystem-1.0.0-py3-none-any.whl TUNNEL_TOKEN='eyJ...' b
 | 旧的 TLS 版本 | 浏览器和 Python 3.10 以上的客户端本身就不再使用 TLS 1.0 和 1.1 |
 | Rocket Loader | 页面脚本带有 `data-cfasync="false"`，Rocket Loader 会跳过它 |
 | Cloudflare 往页面注入的脚本 | 后台的 CSP 只允许同源脚本，注入的分析脚本等会被拦截，读不到任何内容 |
-| 暴力破解后台登录 | Access 挡在登录页前面；服务端自己也有限流 |
+| 暴力破解后台登录 | 服务端按 IP 和用户名限流；主密码先在浏览器做 60 万次 PBKDF2；开启两步验证后还需要手机上的验证码 |
 
 **唯一可能需要处理的情况**：如果你的域开了 Bot Fight Mode，设备访问时可能收到 403。遇到时再处理，不要为此关闭整个域的设置。
 
