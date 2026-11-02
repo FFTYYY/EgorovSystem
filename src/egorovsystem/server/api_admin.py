@@ -242,7 +242,7 @@ async def overview(request: Request) -> Response:
 @require_admin
 async def list_items(request: Request) -> Response:
     with request.app.state.db.read() as conn:
-        rows = conn.execute("SELECT * FROM items ORDER BY kind, position, rowid").fetchall()
+        rows = conn.execute("SELECT * FROM items ORDER BY kind, position, rowid DESC").fetchall()
     return JSONResponse({"items": [dbm.row_to_item(row) for row in rows]})
 
 

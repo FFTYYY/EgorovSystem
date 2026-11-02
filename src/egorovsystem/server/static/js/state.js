@@ -89,7 +89,7 @@ export function findItem(kind, name) {
 }
 
 // Items stay in the order the server keeps: by kind, then by position
-// (insertion order unless the admin dragged them around).
+// (newest first unless the admin dragged them around).
 function sortItems() {
   vault.items.sort((a, b) => (a.kind === b.kind ? (a.position ?? 0) - (b.position ?? 0) : a.kind.localeCompare(b.kind)));
 }

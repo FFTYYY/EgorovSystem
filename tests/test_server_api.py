@@ -363,31 +363,50 @@ def test_migration_adds_columns_without_touching_data(server, admin, client):
     with server.db.write() as conn:
         conn.execute("ALTER TABLE items DROP COLUMN position")
         conn.execute("ALTER TABLE items DROP COLUMN refs")
+    with server.db.write() as conn:
+        conn.execute("UPDATE meta SET value = '1' WHERE key = 'schema_version'")
     server.db.migrate()
     server.db.migrate()  # running it twice is harmless
     with server.db.read() as conn:
         after = conn.execute("SELECT kind, name, blob FROM items ORDER BY position").fetchall()
         devices_after = conn.execute("SELECT id, auth_hash, wrapped_vault_key FROM devices").fetchall()
         version = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0]
-    assert [tuple(r) for r in after] == [tuple(r) for r in before]
+    assert [tuple(r) for r in after] == [tuple(r) for r in reversed(before)]  # newest first
     assert [tuple(r) for r in devices_after] == [tuple(r) for r in devices_before]
-    assert version == "2"
+    assert version == "3"
     assert device_get(client, token, "/api/v1/device/items/variable/zeta").status_code == 200
 
 
-def test_items_keep_insertion_order_and_can_be_reordered(admin, client):
+def test_upgrading_from_schema_2_lists_newest_first_once(server, admin):
+    for name in ("oldest", "middle", "newest"):
+        admin.create_variable(name, "x")
+    names = lambda: [i["name"] for i in admin.get("/api/v1/admin/items").json()["items"] if i["kind"] == "variable"]
+    # Schema 2 kept the oldest first.
+    with server.db.write() as conn:
+        conn.execute("UPDATE items SET position = rowid")
+        conn.execute("UPDATE meta SET value = '2' WHERE key = 'schema_version'")
+    assert names() == ["oldest", "middle", "newest"]
+    server.db.migrate()
+    assert names() == ["newest", "middle", "oldest"]
+    # Later starts keep whatever order the admin chose.
+    assert admin.post("/api/v1/admin/items/order", {"kind": "variable", "names": ["middle", "newest", "oldest"]}).status_code == 200
+    server.db.migrate()
+    assert names() == ["middle", "newest", "oldest"]
+
+
+def test_new_items_go_first_and_can_be_reordered(admin, client):
     for name in ("zeta", "alpha", "mid"):
         admin.create_variable(name, "x")
     names = lambda: [i["name"] for i in admin.get("/api/v1/admin/items").json()["items"] if i["kind"] == "variable"]
-    assert names() == ["zeta", "alpha", "mid"]
-    assert admin.post("/api/v1/admin/items/order", {"kind": "variable", "names": ["mid", "zeta", "alpha"]}).status_code == 200
-    assert names() == ["mid", "zeta", "alpha"]
+    assert names() == ["mid", "alpha", "zeta"]
+    assert admin.post("/api/v1/admin/items/order", {"kind": "variable", "names": ["zeta", "mid", "alpha"]}).status_code == 200
+    assert names() == ["zeta", "mid", "alpha"]
     admin.create_variable("newest", "x")
-    assert names()[-1] == "newest"
+    assert names()[0] == "newest"
     assert admin.post("/api/v1/admin/items/order", {"kind": "variable", "names": ["mid", "zeta"]}).status_code == 409
     token = admin.create_device("laptop")
     listed = [i["name"] for i in device_get(client, token, "/api/v1/device/items").json()["items"]]
-    assert listed == ["mid", "zeta", "alpha", "newest"]
+    assert listed == ["newest", "zeta", "mid", "alpha"]
 
 
 def test_granting_a_function_grants_the_variables_it_references(admin, client):

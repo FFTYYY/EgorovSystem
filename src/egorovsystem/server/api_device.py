@@ -38,7 +38,7 @@ async def whoami(request: Request) -> JSONResponse:
 async def list_items(request: Request) -> JSONResponse:
     device = request.state.device
     with request.app.state.db.read() as conn:
-        rows = conn.execute("SELECT kind, name, updated_at FROM items ORDER BY kind, position, rowid").fetchall()
+        rows = conn.execute("SELECT kind, name, updated_at FROM items ORDER BY kind, position, rowid DESC").fetchall()
         via_functions = variables_granted_by_functions(device.scopes, dbm.function_refs(conn))
     items = [dict(row) for row in rows
              if device.allows(row["kind"], row["name"]) or (row["kind"] == "variable" and row["name"] in via_functions)]

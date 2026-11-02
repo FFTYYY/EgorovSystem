@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS items (
     blob       TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    -- schema 2: display order, and for functions the variable names they
+    -- schema 2: display order (newest first since schema 3), and for functions the variable names they
     -- reference (plaintext names, set by the browser), used for implicit grants
     position   REAL,
     refs       TEXT,
@@ -153,8 +153,18 @@ class Database:
                 conn.execute("ALTER TABLE items ADD COLUMN position REAL")
             if "refs" not in columns:
                 conn.execute("ALTER TABLE items ADD COLUMN refs TEXT")
-            # Items without a position keep their insertion order.
-            conn.execute("UPDATE items SET position = rowid WHERE position IS NULL")
+            version = int(get_meta(conn, "schema_version") or 1)
+            if version < 3:
+                # Version 2 listed the oldest items first; from 3 on the
+                # newest come first, so start every list over in that order.
+                for kind in ("variable", "function"):
+                    rows = conn.execute("SELECT rowid FROM items WHERE kind = ? ORDER BY created_at DESC, rowid DESC",
+                                        (kind,)).fetchall()
+                    conn.executemany("UPDATE items SET position = ? WHERE rowid = ?",
+                                     [(index, row[0]) for index, row in enumerate(rows, start=1)])
+            # Rows written by an older release have no position; the newer the
+            # row, the higher it goes.
+            conn.execute("UPDATE items SET position = -rowid WHERE position IS NULL")
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
 
     def exists(self) -> bool:
@@ -221,8 +231,8 @@ def audit(
 
 
 def next_position(conn: sqlite3.Connection, kind: str) -> float:
-    """New items go to the end of their list."""
-    return conn.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM items WHERE kind = ?", (kind,)).fetchone()[0]
+    """New items go to the top of their list."""
+    return conn.execute("SELECT COALESCE(MIN(position), 1) - 1 FROM items WHERE kind = ?", (kind,)).fetchone()[0]
 
 
 def parse_refs(value: Optional[str]) -> Optional[list]:

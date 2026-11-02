@@ -90,8 +90,9 @@ computes each function's `${name}` references when saving it and sends them as
 only for this check. Functions saved before schema 2 get their `refs` filled in
 by the admin UI after the next sign-in (`POST /api/v1/admin/items/refs`).
 
-Items are listed by `position` (insertion order unless reordered with
-`POST /api/v1/admin/items/order`).
+Items are listed by `position`, newest first: a new item goes to the top of its
+list, unless the admin reorders it with `POST /api/v1/admin/items/order`.
+Upgrading to schema 3 resets every list to newest-first.
 
 ## Admin API
 
