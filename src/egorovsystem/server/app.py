@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +19,12 @@ from .db import Database
 from .security import RateLimiter, SecurityHeadersMiddleware
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# Do not trust the platform's MIME registry (Windows sometimes maps .js to
+# text/plain, which breaks module scripts under X-Content-Type-Options).
+for _type, _ext in (("text/javascript", ".js"), ("text/css", ".css"), ("font/woff2", ".woff2"),
+                    ("image/svg+xml", ".svg"), ("text/plain", ".txt")):
+    mimetypes.add_type(_type, _ext)
 
 UPGRADE_MESSAGE = (
     "This Egorov server runs v1, which encrypts everything end to end. "
