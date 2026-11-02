@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "egorovsystem"
+version = "1.0.0"
+description = "End-to-end encrypted sync of variables, secrets and commands across your machines."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "Yongyi Yang", email = "yongyi@umich.edu" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Security :: Cryptography",
+]
+# The client only needs these two. Everything the server needs is in the
+# "server" extra, so ordinary machines stay lightweight.
+dependencies = [
+    "cryptography>=42",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+server = [
+    "starlette>=0.37",
+    "uvicorn>=0.29",
+    "segno>=1.6",
+]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+]
+
+[project.urls]
+Homepage = "https://github.com/FFTYYY/EgorovSystem"
+
+[project.scripts]
+EGO = "egorovsystem.run_command:run"
+egolocal-run = "egorovsystem.local.server:run"
+egoserver-init = "egorovsystem.server.cli:init"
+egoserver-run = "egorovsystem.server.cli:run"
+egoserver-admin = "egorovsystem.server.cli:admin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"egorovsystem.server" = ["static/*", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
