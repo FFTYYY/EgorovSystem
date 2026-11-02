@@ -15,16 +15,64 @@ export function dragHandle(name, enabled) {
   }, icon("grip"));
 }
 
+// While a row is being dragged, scroll the window when the pointer comes near
+// its top or bottom edge, faster the closer it gets. The pointer position comes
+// from dragover on the whole document, which keeps firing while it rests.
+// Speed is per second, not per frame, so slow frames do not slow it down.
+const EDGE = 90;
+const MAX_SPEED = 1400;
+
+function edgeScroller() {
+  let y = null;
+  let frame = 0;
+  let last = 0;
+  let carry = 0;
+  const track = (event) => { y = event.clientY; };
+  const tick = (now) => {
+    frame = requestAnimationFrame(tick);
+    const seconds = Math.min((now - last) / 1000, 0.25);
+    last = now;
+    if (y === null) return;
+    const height = window.innerHeight;
+    const zone = Math.min(EDGE, height / 4);
+    let speed = 0;
+    if (y < zone) speed = -MAX_SPEED * (1 - Math.max(y, 0) / zone);
+    else if (y > height - zone) speed = MAX_SPEED * (1 - Math.max(height - y, 0) / zone);
+    carry = speed ? carry + speed * seconds : 0;
+    const step = Math.trunc(carry);
+    if (step) {
+      carry -= step;
+      window.scrollBy(0, step);
+    }
+  };
+  return {
+    start() {
+      y = null;
+      carry = 0;
+      last = performance.now();
+      document.addEventListener("dragover", track);
+      frame = requestAnimationFrame(tick);
+    },
+    stop() {
+      document.removeEventListener("dragover", track);
+      cancelAnimationFrame(frame);
+      y = null;
+    },
+  };
+}
+
 // container: the element holding the rows; rows carry data-key.
 // onMove(keysInNewOrder, movedKey) is called after a drop or an arrow key.
 export function makeSortable(container, itemSelector, onMove) {
   let dragged = null;
+  const scroller = edgeScroller();
   const rows = () => Array.from(container.querySelectorAll(itemSelector));
   const keyOf = (row) => row.dataset.key;
   const clearMarks = () => {
     for (const row of container.querySelectorAll(".drop-before, .drop-after")) row.classList.remove("drop-before", "drop-after");
   };
   const end = () => {
+    scroller.stop();
     clearMarks();
     if (dragged) dragged.classList.remove("is-dragging");
     dragged = null;
@@ -42,6 +90,7 @@ export function makeSortable(container, itemSelector, onMove) {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", keyOf(row));
     event.dataTransfer.setDragImage(row, 24, 18);
+    scroller.start();
   });
 
   container.addEventListener("dragover", (event) => {
