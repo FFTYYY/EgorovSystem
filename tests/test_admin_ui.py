@@ -9,7 +9,9 @@ STATIC = Path(__file__).resolve().parents[1] / "src" / "egorovsystem" / "server"
 def test_admin_page_and_assets_are_served(client):
     page = client.get("/admin/")
     assert page.status_code == 200
-    assert '<script type="module" src="static/js/main.js"></script>' in page.text
+    # data-cfasync="false" makes Cloudflare Rocket Loader leave the script alone,
+    # so the zone-wide Rocket Loader setting does not matter.
+    assert '<script type="module" data-cfasync="false" src="static/js/main.js"></script>' in page.text
     for path in ("static/app.css", "static/js/main.js", "static/js/crypto.js", "static/fonts/eb-garamond.woff2",
                  "static/favicon.svg"):
         response = client.get(f"/admin/{path}")

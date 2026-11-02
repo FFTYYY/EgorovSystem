@@ -262,6 +262,21 @@ def test_proxy_headers_are_ignored_from_untrusted_peers(server, client):
     assert "strict-transport-security" in trusted.get("/healthz", headers={"X-Forwarded-Proto": "https"}).headers
 
 
+def test_plain_http_visitors_are_redirected_to_https(server, client):
+    tunnel = TestClient(server.app, client=("127.0.0.1", 40000))
+    via_http = tunnel.post("/get/variable/x?a=1", headers={"Host": "egorov.example.org", "CF-Visitor": '{"scheme":"http"}'},
+                           follow_redirects=False)
+    assert via_http.status_code == 308
+    assert via_http.headers["location"] == "https://egorov.example.org/get/variable/x?a=1"
+    assert "content-security-policy" in via_http.headers
+    xfp = tunnel.get("/admin/", headers={"Host": "egorov.example.org", "X-Forwarded-Proto": "http"}, follow_redirects=False)
+    assert xfp.status_code == 308
+    # Visitors already on https, local health checks and untrusted peers are left alone.
+    assert tunnel.get("/healthz", headers={"CF-Visitor": '{"scheme":"https"}'}).status_code == 200
+    assert tunnel.get("/healthz").status_code == 200
+    assert client.get("/healthz", headers={"CF-Visitor": '{"scheme":"http"}'}, follow_redirects=False).status_code == 200
+
+
 def test_old_clients_get_an_upgrade_message(client):
     response = client.post("/get/variable/openai_keys", json={"password": "abc"})
     assert response.status_code == 410

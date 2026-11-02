@@ -57,16 +57,25 @@ sudo EGOROV_SOURCE=./egorovsystem-1.0.0-py3-none-any.whl TUNNEL_TOKEN='eyJ...' b
 
 脚本可以重复运行，升级时也用它。
 
-## 第 3 步：Cloudflare 安全设置
+## 第 3 步：Cloudflare 设置
 
-| 位置 | 设置 | 原因 |
-| --- | --- | --- |
-| SSL/TLS → Edge Certificates | 开启 **Always Use HTTPS**；**Minimum TLS Version** 设为 1.2；开启 TLS 1.3 | 拒绝明文和旧协议 |
-| SSL/TLS → Edge Certificates | 开启 **HSTS**，max-age 至少 6 个月。只有当域名下所有子域都支持 HTTPS 时才勾选 includeSubDomains | 浏览器以后只走 HTTPS |
-| Zero Trust → Access controls → Applications | 选 **Create new application → Self-hosted and private**，用 **Add public hostname** 添加两个路径：`egorov.example.com/admin` 和 `egorov.example.com/api/v1/admin`。策略设为只允许你的邮箱，登录方式用一次性验证码 | 后台多一道与 Egorov 无关的门。**不要**覆盖 `/api/v1/device`，否则设备无法访问 |
-| Security → WAF → Rate limiting rules | 对 `/api/v1/admin/login` 和 `/api/v1/admin/prelogin` 限流，按套餐允许的最严格值设置 | 和服务端自身的限流叠加 |
-| Speed / Scrape Shield / Zaraz | 对这个子域关闭 **Rocket Loader**、**Email Address Obfuscation**、**Zaraz** 和 Web Analytics 的自动注入 | 这些功能会往页面里插脚本。CSP 会拦截它们，而且端到端加密的后台不应该被任何人改动 |
-| Security → Bots | 如果设备访问时收到 403 或质询页面，关闭 **Bot Fight Mode**，或为 `/api/v1/device/*` 设置例外 | 设备是命令行程序，过不了浏览器质询 |
+**只做两件事，都只作用于 Egorov 的子域，不会影响同一个账号下的其他服务。** 不需要修改任何整域设置，比如 Always Use HTTPS、最低 TLS 版本、Rocket Loader 或 Bot Fight Mode。
+
+1. **隧道和路由**：见第 1 步。
+2. **用 Access 保护后台**：进入 **Zero Trust → Access controls → Applications**，选 **Create new application → Self-hosted and private**，用 **Add public hostname** 添加两条：子域 `egorov`、路径 `admin`；子域 `egorov`、路径 `api/v1/admin`。策略设为 Allow，只包含你的邮箱，登录方式用 One-time PIN。**不要**覆盖整个子域，否则设备无法读取数据。
+
+其余的事由 Egorov 自己处理，所以不必改 Cloudflare：
+
+| 需求 | Egorov 的做法 |
+| --- | --- |
+| HTTP 跳转到 HTTPS | 服务器根据 Cloudflare 转发的 `CF-Visitor` 头判断访客用的协议，对 HTTP 访问返回 308 跳转 |
+| HSTS | 服务器只为自己的子域发送，不带 includeSubDomains |
+| 旧的 TLS 版本 | 浏览器和 Python 3.10 以上的客户端本身就不再使用 TLS 1.0 和 1.1 |
+| Rocket Loader | 页面脚本带有 `data-cfasync="false"`，Rocket Loader 会跳过它 |
+| Cloudflare 往页面注入的脚本 | 后台的 CSP 只允许同源脚本，注入的分析脚本等会被拦截，读不到任何内容 |
+| 暴力破解后台登录 | Access 挡在登录页前面；服务端自己也有限流 |
+
+**唯一可能需要处理的情况**：如果你的域开了 Bot Fight Mode，设备访问时可能收到 403。遇到时再处理，不要为此关闭整个域的设置。
 
 ## 第 4 步：验证
 
@@ -79,7 +88,7 @@ sudo EGOROV_SOURCE=./egorovsystem-1.0.0-py3-none-any.whl TUNNEL_TOKEN='eyJ...' b
    EGO --whoami
    ```
 
-3. 检查响应头里有 CSP 和 HSTS：`curl -sI https://egorov.example.com/admin/`。
+3. 检查响应头里有 CSP 和 HSTS：`curl -sI https://egorov.example.com/admin/`；用 http 访问应返回 308 跳转到 https。
 4. 在服务器上确认没有对外监听的端口：`sudo ss -tlnp`，应只看到 `127.0.0.1:7999` 和 sshd。
 
 ## 日常维护
@@ -117,8 +126,8 @@ sudo systemctl start egorov
 如果不能用 Tunnel，可以让 Cloudflare 直接连源站：
 
 1. 在 **SSL/TLS → Origin Server** 生成 Origin CA 证书，有效期最长 15 年，装到 nginx 或 Caddy 上，反向代理到 `127.0.0.1:7999`；
-2. SSL/TLS 模式设为 **Full (strict)**；
-3. 开启 **Authenticated Origin Pulls**，让源站只接受带 Cloudflare 客户端证书的连接；
+2. 用一条只匹配这个子域的 **Configuration Rule** 把 SSL 模式设为 **Full (strict)**，不要改整个域的 SSL 模式；
+3. 开启 **Authenticated Origin Pulls** 的 per-hostname 方式，上传你自己的客户端证书，让源站只接受来自你账号的连接；
 4. 防火墙只对 Cloudflare 的 IP 段开放 443。
 
 这条路需要自己维护 nginx 和证书，源站 IP 也有被发现的可能，所以默认不推荐。注意源站拉取认证和 Tunnel 不能同时使用，Tunnel 本身已经认证了连接。

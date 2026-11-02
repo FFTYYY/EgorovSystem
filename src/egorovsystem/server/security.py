@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 import threading
 import time
 from collections import deque
 from typing import Optional
 
 from starlette.requests import Request
+from starlette.responses import RedirectResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 CSP = "; ".join([
@@ -76,17 +78,42 @@ def client_ip(request: Request) -> str:
     return client[0] if client else "unknown"
 
 
+def visitor_scheme(scope: Scope, trust_proxy: bool) -> Optional[str]:
+    """The scheme the visitor used to reach Cloudflare, as reported by a
+    trusted local proxy (cloudflared), or None when nothing reliable says so."""
+    if not peer_is_trusted_proxy(scope, trust_proxy):
+        return None
+    try:
+        scheme = json.loads(_header(scope, b"cf-visitor") or "{}").get("scheme")
+    except (ValueError, AttributeError):
+        scheme = None
+    if scheme not in ("http", "https"):
+        scheme = (_header(scope, b"x-forwarded-proto") or "").lower()
+    return scheme if scheme in ("http", "https") else None
+
+
 def request_is_https(scope: Scope, trust_proxy: bool) -> bool:
-    if scope.get("scheme") == "https":
-        return True
-    if peer_is_trusted_proxy(scope, trust_proxy):
-        if (_header(scope, b"x-forwarded-proto") or "").lower() == "https":
-            return True
-        try:
-            return json.loads(_header(scope, b"cf-visitor") or "{}").get("scheme") == "https"
-        except (ValueError, AttributeError):
-            return False
-    return False
+    return scope.get("scheme") == "https" or visitor_scheme(scope, trust_proxy) == "https"
+
+
+_HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?$")
+
+
+def https_redirect_target(scope: Scope, trust_proxy: bool) -> Optional[str]:
+    """Where to send a visitor who came in over plain HTTP, or None.
+
+    The server does this itself so that no zone-wide Cloudflare setting
+    (such as Always Use HTTPS) is needed. 308 keeps the method, so even old
+    clients that POST get the upgrade notice over HTTPS."""
+    if visitor_scheme(scope, trust_proxy) != "http":
+        return None
+    host = _header(scope, b"host") or ""
+    if not _HOST_RE.match(host):
+        return None
+    path = scope.get("raw_path") or scope.get("path", "/").encode()
+    target = f"https://{host}{path.decode('latin-1')}"
+    query = scope.get("query_string", b"")
+    return f"{target}?{query.decode('latin-1')}" if query else target
 
 
 class SecurityHeadersMiddleware:
@@ -122,6 +149,10 @@ class SecurityHeadersMiddleware:
                 message["headers"] = headers
             await send(message)
 
+        redirect = https_redirect_target(scope, self.trust_proxy)
+        if redirect:
+            await RedirectResponse(redirect, status_code=308)(scope, receive, send_wrapper)
+            return
         await self.app(scope, receive, send_wrapper)
 
 
