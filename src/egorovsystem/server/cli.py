@@ -6,6 +6,7 @@ import argparse
 import getpass
 import ipaddress
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -47,6 +48,19 @@ def _print_recovery_key(recovery: str) -> None:
 
 # ---------------------------------------------------------------- init
 
+def _interactive(func):
+    """Turn Ctrl+C or Ctrl+D at a prompt into a clean exit instead of a traceback."""
+    def wrapper(argv: Optional[list] = None) -> None:
+        try:
+            func(argv)
+        except (EOFError, KeyboardInterrupt):
+            sys.exit("\nCancelled.")
+    wrapper.__name__ = func.__name__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
+
+
+@_interactive
 def init(argv: Optional[list] = None) -> None:
     parser = argparse.ArgumentParser(prog="egoserver-init", description="Create the admin account and the encrypted vault.")
     parser.add_argument("--data-dir", help="where to keep the database (default: %(default)s)", default=None)
@@ -109,13 +123,16 @@ def run(argv: Optional[list] = None) -> None:
 
 # ---------------------------------------------------------------- admin
 
+@_interactive
 def admin(argv: Optional[list] = None) -> None:
     parser = argparse.ArgumentParser(prog="egoserver-admin", description="Maintenance tasks for the Egorov server.")
     parser.add_argument("--data-dir", default=None)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("info", help="show where the data is and what it contains")
     backup = sub.add_parser("backup", help="write a consistent copy of the database (it is already encrypted)")
-    backup.add_argument("destination")
+    backup.add_argument("destination", help="a file, or a directory for timestamped copies")
+    backup.add_argument("--keep", type=int, default=0,
+                        help="with a directory: keep only the newest N copies (0 keeps all)")
     sub.add_parser("reset-password", help="set a new master password using the recovery key")
     sub.add_parser("disable-totp", help="turn off two-factor sign-in (if you lost your phone)")
     sub.add_parser("revoke-sessions", help="sign out every admin session")
@@ -134,8 +151,7 @@ def admin(argv: Optional[list] = None) -> None:
         if args.command == "info":
             _info(database, settings)
         elif args.command == "backup":
-            database.backup_to(Path(args.destination))
-            print(f"Backup written to {args.destination}")
+            print(f"Backup written to {_backup(database, Path(args.destination), args.keep)}")
         elif args.command == "reset-password":
             recovery = getpass.getpass("Recovery key: ")
             with database.read() as conn:
@@ -161,6 +177,20 @@ def admin(argv: Optional[list] = None) -> None:
                 print(f"  ! {kind:8} {name!r} (name not allowed in v1; recreate it in the admin UI)")
     except (vault.VaultError, crypto.CryptoError) as exc:
         sys.exit(f"Error: {exc}")
+
+
+def _backup(database: Database, destination: Path, keep: int) -> Path:
+    """Back up to a file, or to a timestamped file inside a directory."""
+    if destination.is_dir() or keep or str(destination).endswith(("/", "\\")):
+        destination.mkdir(parents=True, exist_ok=True)
+        target = destination / time.strftime("egorov-%Y%m%d-%H%M%S.sqlite3")
+        database.backup_to(target)
+        if keep > 0:
+            for old in sorted(destination.glob("egorov-*.sqlite3"), reverse=True)[keep:]:
+                old.unlink()
+        return target
+    database.backup_to(destination)
+    return destination
 
 
 def _info(database: Database, settings: Settings) -> None:

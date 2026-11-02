@@ -39,6 +39,13 @@ def test_init_info_backup_reset_and_import(tmp_path, monkeypatch, capsys, fast_k
 
     cli.admin(["--data-dir", data, "backup", str(tmp_path / "b.sqlite3")])
     assert (tmp_path / "b.sqlite3").exists()
+    backups = tmp_path / "backups"
+    for stamp in ("20250101-000000", "20250102-000000", "20250103-000000"):
+        backups.mkdir(exist_ok=True)
+        (backups / f"egorov-{stamp}.sqlite3").write_bytes(b"old")
+    cli.admin(["--data-dir", data, "backup", str(backups), "--keep", "2"])
+    kept = sorted(p.name for p in backups.iterdir())
+    assert len(kept) == 2 and kept[0] == "egorov-20250103-000000.sqlite3"
 
     feed(monkeypatch, secrets=[recovery, "another strong one", "another strong one"])
     cli.admin(["--data-dir", data, "reset-password"])

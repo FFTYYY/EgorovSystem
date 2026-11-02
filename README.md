@@ -1,5 +1,104 @@
 # EgorovSystem
 
-在不同设备之间同步变量、密钥和常用命令的小工具。
+在不同设备之间同步变量、密钥和常用命令的小工具。v1 是端到端加密的：服务器、Cloudflare 和数据库里都只有密文。
 
-v1 正在重写中，旧实现已移出代码树。
+```python
+from egorovsystem import Egorov
+
+openai_key = Egorov["openai_keys"]
+```
+
+```bash
+EGO deploy_blog          # 运行保存在服务器上的命令
+```
+
+## 工作方式
+
+* **服务器**只保存密文。变量的值、函数内容、备注和主密码都不会以明文出现在服务器上。
+* **管理后台**在浏览器里加密和解密，主密码从不发给服务器。界面是深色学院风，支持两步验证、审计日志和密钥轮换。
+* **每台设备**有自己的令牌，可以限定能读哪些条目，可以随时停用或吊销。
+* **部署**推荐用 Cloudflare Tunnel：服务器不开放任何入站端口，egoserver 只监听本机。
+
+细节见 [docs/PROTOCOL.md](docs/PROTOCOL.md)。
+
+## 快速开始
+
+### 服务器
+
+在一台 Debian 或 Ubuntu 服务器上：
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/FFTYYY/EgorovSystem/main/deploy/install-server.sh
+sudo TUNNEL_TOKEN='eyJ...' ENABLE_FIREWALL=1 bash install-server.sh
+```
+
+完整步骤和 Cloudflare 的安全设置见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+
+### 客户端
+
+```bash
+pip install -U egorovsystem
+```
+
+没有 Python 的机器可以用安装脚本，它会通过 uv 自动下载 Python：
+
+```bash
+sh deploy/install-client.sh                                  # macOS / Linux
+powershell -ExecutionPolicy Bypass -File deploy/install-client.ps1   # Windows
+```
+
+然后在后台“设备”页创建令牌，并配置：
+
+```bash
+export EGOROV_SERVER=egorov.example.com
+export EGOROV_PWD='ego1....'
+EGO --whoami
+```
+
+不想把令牌放进环境变量时，运行一次 `egolocal-run`。之后同一台机器上的程序会通过它读取。
+
+## 用法
+
+| 写法 | 作用 |
+| --- | --- |
+| `Egorov["name"]` | 读取变量；没有这个变量时返回同名函数 |
+| `get_variable("name")` | 读取变量 |
+| `get_function("name")` | 返回 `{"type", "content", "note"}`，`${变量}` 已替换 |
+| `set_variable("name", "value")` | 在当前进程里覆盖一个变量，方便测试 |
+| `EGO name [参数…]` | 运行函数，参数会传给命令，返回命令的退出码 |
+| `EGO --show name` / `--list` / `--whoami` | 查看函数内容、列出可读条目、查看本机设备 |
+| `egolocal-run [--port 11451]` | 启动本机代理 |
+
+函数里可以用 `${变量名}` 引用变量，客户端在运行前替换。不存在的名字原样保留，所以 `${HOME}` 这类 shell 写法不受影响。
+
+python 类型的函数用运行 EGO 的同一个解释器执行。如果脚本带有 [PEP 723](https://peps.python.org/pep-0723/) 依赖声明，并且机器上装了 uv，就用 `uv run` 执行，依赖会自动安装。
+
+## 服务器命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `egoserver-init` | 创建管理员和保险库，打印恢复密钥 |
+| `egoserver-run` | 启动服务器，默认 `127.0.0.1:7999` |
+| `egoserver-admin info` | 查看状态 |
+| `egoserver-admin backup <目录> --keep 14` | 备份数据库，数据库本身已加密 |
+| `egoserver-admin reset-password` | 用恢复密钥重置主密码 |
+| `egoserver-admin disable-totp` | 关闭两步验证 |
+| `egoserver-admin import-legacy <旧库>` | 导入 v0 的数据 |
+
+## 从旧版升级
+
+见 [docs/MIGRATION.md](docs/MIGRATION.md)。旧客户端在服务器升级后会收到明确的升级提示。
+
+## 开发
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -e ".[server,dev]"
+.venv/bin/pytest
+```
+
+`tests/test_crypto_interop.py` 用 Node 运行浏览器端的加密代码，与 Python 实现逐字节比对。没装 Node 时这个测试会跳过。
+
+## 许可
+
+MIT。管理后台自带的字体使用 SIL Open Font License，许可证随字体文件一起分发。
