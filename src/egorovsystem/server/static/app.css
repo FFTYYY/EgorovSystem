@@ -60,6 +60,16 @@ body::before {
 }
 
 ::selection { background: rgba(201, 165, 92, 0.35); color: var(--paper); }
+
+/* Scrollbars: a slim rule in the page's own colors instead of the platform default. */
+* { scrollbar-width: thin; scrollbar-color: #4a554b transparent; }
+textarea:hover, .table-wrap:hover, .modal-body:hover, .code-block:hover { scrollbar-color: var(--brass-deep) transparent; }
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #4a554b; border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--brass-deep); background-clip: padding-box; }
+}
 a { color: var(--brass-bright); text-underline-offset: 3px; text-decoration-thickness: 1px; }
 a:hover { color: var(--paper); }
 :focus-visible { outline: 2px solid var(--brass-bright); outline-offset: 2px; }
