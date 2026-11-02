@@ -1,7 +1,20 @@
+# Secrets and runtime data never belong in git
 secret.py
-test
+*.sqlite3
+*.sqlite3-*
+*.db
+data/
+
+# Python build and tooling output
+__pycache__/
 *.pyc
-db.sqlite3
-*.egg-info
-dist
-build
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# Local workspace
+reports
+tmp
+node_modules/
