@@ -44,6 +44,14 @@ def test_wrong_password_is_rejected_and_rate_limited(server, client):
     assert len(failures) == 5
 
 
+def test_attacker_cannot_lock_the_admin_out(server):
+    attacker = AdminSession(TestClient(server.app, client=("198.51.100.66", 4000)), password="guessing wildly!")
+    for _ in range(5):
+        attacker.login(expect=401)
+    attacker.login(expect=429)
+    AdminSession(TestClient(server.app, client=("203.0.113.5", 4000))).login()
+
+
 def test_admin_requires_session_and_csrf(admin, client):
     assert client.get("/api/v1/admin/items").status_code == 200
     blob = crypto.encrypt_item(admin.vault_key, "variable", "x", {"value": "1"})

@@ -27,8 +27,10 @@ from .auth import (
 from .security import BodyTooLarge, client_ip, read_json
 
 LOGIN_WINDOW = 15 * 60
-LOGIN_IP_LIMIT = 10
-LOGIN_USER_LIMIT = 5
+LOGIN_IP_LIMIT = 10          # failures from one IP, any username
+LOGIN_USER_IP_LIMIT = 5      # failures for one username from one IP
+LOGIN_USER_LIMIT = 50        # failures for one username from everywhere; high so that
+                             # strangers cannot lock the admin out on purpose
 AUTH_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 SESSION_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 MAX_ITEM_BLOB = 1_500_000
@@ -65,9 +67,15 @@ def _session_payload(admin, session) -> dict:
     }
 
 
+def _login_keys(ip: str, username: str) -> tuple:
+    return ((f"login-ip:{ip}", LOGIN_IP_LIMIT),
+            (f"login-user-ip:{username}:{ip}", LOGIN_USER_IP_LIMIT),
+            (f"login-user:{username}", LOGIN_USER_LIMIT))
+
+
 def _login_blocked(request: Request, ip: str, username: str) -> Optional[Response]:
     limiter = request.app.state.limiter
-    for key, limit in ((f"login-ip:{ip}", LOGIN_IP_LIMIT), (f"login-user:{username}", LOGIN_USER_LIMIT)):
+    for key, limit in _login_keys(ip, username):
         if limiter.count(key, LOGIN_WINDOW) >= limit:
             return error(429, "rate_limited", "Too many failed sign-in attempts. Try again later.",
                          retry_after=limiter.retry_after(key, LOGIN_WINDOW))
@@ -76,8 +84,8 @@ def _login_blocked(request: Request, ip: str, username: str) -> Optional[Respons
 
 def _record_login_failure(request: Request, ip: str, username: str) -> None:
     limiter = request.app.state.limiter
-    limiter.add(f"login-ip:{ip}", LOGIN_WINDOW)
-    limiter.add(f"login-user:{username}", LOGIN_WINDOW)
+    for key, _ in _login_keys(ip, username):
+        limiter.add(key, LOGIN_WINDOW)
 
 
 async def _verify_current(request: Request, value: object) -> Optional[Response]:
@@ -174,7 +182,7 @@ async def login(request: Request) -> Response:
         if not updated:
             return error(401, "invalid_totp", "The authenticator code is wrong or was already used.")
 
-    request.app.state.limiter.reset(f"login-user:{username}")
+    request.app.state.limiter.reset(f"login-user-ip:{username}:{ip}")
     with db.write() as conn:
         raw, session = create_session(conn, request)
         _audit(request, conn, "login", username)
