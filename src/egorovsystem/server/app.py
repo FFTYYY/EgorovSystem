@@ -57,6 +57,8 @@ async def legacy(request: Request) -> Response:
 def create_app(settings: Optional[Settings] = None) -> Starlette:
     settings = settings or Settings()
     database = Database(settings.db_path)
+    if database.is_initialized():
+        database.migrate()  # adds new columns in place; never drops data
 
     routes = [
         Route("/", root, methods=["GET"]),

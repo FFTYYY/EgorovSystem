@@ -146,6 +146,7 @@ def admin(argv: Optional[list] = None) -> None:
     database = Database(settings.db_path)
     if not database.is_initialized():
         sys.exit(f"No vault at {settings.db_path}. Run egoserver-init first.")
+    database.migrate()
 
     try:
         if args.command == "info":

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import crypto
-from ..names import is_valid_name
+from ..names import find_references, is_valid_name
 from . import db as dbm
 from .auth import check_verifier, make_verifier
 
@@ -160,10 +160,13 @@ def import_legacy(database: dbm.Database, vault_key: bytes, path: Path,
             if dry_run:
                 continue
             blob = crypto.encrypt_item(vault_key, kind, name, payload)
+            refs = json.dumps(find_references(payload.get("content", ""))) if kind == "function" else None
             conn.execute(
-                "INSERT INTO items (kind, name, blob, created_at, updated_at) VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT (kind, name) DO UPDATE SET blob = excluded.blob, updated_at = excluded.updated_at",
-                (kind, name, blob, now, now))
+                "INSERT INTO items (kind, name, blob, created_at, updated_at, position, refs) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT (kind, name) DO UPDATE SET blob = excluded.blob, updated_at = excluded.updated_at, "
+                "refs = excluded.refs",
+                (kind, name, blob, now, now, dbm.next_position(conn, kind), refs))
         if not dry_run:  # a dry run never writes, so the transaction commits nothing
             dbm.audit(conn, "cli", "vault.import_legacy", str(path),
                       detail={"imported": len(report.imported), "skipped": len(report.skipped_existing)})

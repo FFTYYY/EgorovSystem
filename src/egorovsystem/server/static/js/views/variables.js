@@ -1,7 +1,8 @@
 // Variables: the catalogue of secrets and settings.
 
-import { busy, clear, confirmAction, copyText, field, formError, h, icon, modal, timeTag, toast } from "../dom.js";
-import { deleteItem, functionsUsing, itemsOf, NAME_RE, saveItem } from "../state.js";
+import { busy, clear, confirmAction, copyText, field, formError, h, hoverTip, icon, modal, timeTag, toast } from "../dom.js";
+import { deleteItem, functionsUsing, itemsOf, NAME_RE, reorder, saveItem } from "../state.js";
+import { dragHandle, focusHandle, makeSortable } from "../sortable.js";
 
 let slashHandler = null;
 
@@ -108,6 +109,18 @@ function valueCell(item) {
   return h("td", { class: "cell-value" }, h("div", { class: "value-line" }, mask, secret, h("span", { class: "row-tools" }, toggle, copy)));
 }
 
+// "Used by N functions" under a variable's name; the list shows on hover or focus.
+function usedBy(name) {
+  const users = functionsUsing(name);
+  if (!users.length) return null;
+  const label = `被 ${users.length} 个函数引用`;
+  const trigger = h("button", { class: "used-by", type: "button", "aria-label": `${label}：${users.map((f) => f.name).join("、")}` },
+    label);
+  hoverTip(trigger, () => [h("span", { class: "tooltip-title" }, "引用它的函数"),
+    ...users.map((f) => h("code", { class: "ref" }, f.name))]);
+  return trigger;
+}
+
 export async function renderVariables(page, ctx) {
   let filter = "";
   const tbody = h("tbody");
@@ -115,9 +128,16 @@ export async function renderVariables(page, ctx) {
   const empty = h("div", { class: "empty" });
   const table = h("div", { class: "table-wrap" },
     h("table", { class: "catalog" },
-      h("thead", null, h("tr", null, h("th", null, "名字"), h("th", null, "值"), h("th", null, "备注"),
+      h("thead", null, h("tr", null, h("th", { class: "cell-handle" }, h("span", { class: "visually-hidden" }, "顺序")),
+        h("th", null, "名字"), h("th", null, "值"), h("th", null, "备注"),
         h("th", null, "修改于"), h("th", null, h("span", { class: "visually-hidden" }, "操作")))),
       tbody));
+
+  makeSortable(tbody, "tr", (names, moved) => {
+    reorder("variable", names).catch((err) => { toast(err.message, "error"); draw(); });
+    draw();
+    focusHandle(tbody, moved);
+  });
 
   function draw() {
     const all = itemsOf("variable");
@@ -125,8 +145,9 @@ export async function renderVariables(page, ctx) {
       || (item.payload && item.payload.note.toLowerCase().includes(filter)));
     clear(tbody);
     for (const item of rows) {
-      tbody.append(h("tr", null,
-        h("td", { class: "cell-name" }, h("code", null, item.name)),
+      tbody.append(h("tr", { dataset: { key: item.name } },
+        h("td", { class: "cell-handle" }, dragHandle(item.name, !filter)),
+        h("td", { class: "cell-name" }, h("code", null, item.name), usedBy(item.name)),
         valueCell(item),
         h("td", { class: "cell-note" }, item.payload ? item.payload.note : item.error),
         h("td", { class: "cell-time" }, timeTag(item.updated_at)),

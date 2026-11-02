@@ -88,16 +88,51 @@ export function findItem(kind, name) {
   return vault.items.find((item) => item.kind === kind && item.name === name);
 }
 
+// Items stay in the order the server keeps: by kind, then by position
+// (insertion order unless the admin dragged them around).
+function sortItems() {
+  vault.items.sort((a, b) => (a.kind === b.kind ? (a.position ?? 0) - (b.position ?? 0) : a.kind.localeCompare(b.kind)));
+}
+
 export async function saveItem(kind, originalName, name, payload) {
   const blob = await c.encryptItem(session.vaultKey, kind, name, payload);
+  // Functions tell the server which variable names they use, so that granting a
+  // function to a device also grants those variables. Values stay encrypted.
+  const extra = kind === "function" ? { refs: references(payload.content) } : {};
   const row = originalName
-    ? await api("PUT", `/items/${kind}/${encodeURIComponent(originalName)}`, { blob, new_name: name })
-    : await api("POST", "/items", { kind, name, blob });
+    ? await api("PUT", `/items/${kind}/${encodeURIComponent(originalName)}`, { blob, new_name: name, ...extra })
+    : await api("POST", "/items", { kind, name, blob, ...extra });
   const decrypted = { ...row, payload, error: null };
-  vault.items = vault.items.filter((item) => !(item.kind === kind && item.name === (originalName || name)));
-  vault.items.push(decrypted);
-  vault.items.sort((a, b) => (a.kind + a.name).localeCompare(b.kind + b.name));
+  const index = vault.items.findIndex((item) => item.kind === kind && item.name === (originalName || name));
+  if (index >= 0) vault.items[index] = decrypted;
+  else vault.items.push(decrypted);
+  sortItems();
   return decrypted;
+}
+
+// Save a new order for one kind. Applied locally at once; reloaded on failure.
+export async function reorder(kind, names) {
+  const byName = new Map(itemsOf(kind).map((item) => [item.name, item]));
+  names.forEach((name, index) => { byName.get(name).position = index + 1; });
+  sortItems();
+  try {
+    await api("POST", "/items/order", { kind, names });
+  } catch (error) {
+    await loadItems();
+    throw error;
+  }
+}
+
+const sameList = (a, b) => Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i]);
+
+// Functions saved before the server tracked references have none recorded.
+// Fill them in quietly after every sign-in; it costs one request when needed.
+export async function syncRefs() {
+  const stale = itemsOf("function").filter((fn) => fn.payload && !sameList(fn.refs, references(fn.payload.content)));
+  if (!stale.length) return 0;
+  await api("POST", "/items/refs", { items: stale.map((fn) => ({ name: fn.name, refs: references(fn.payload.content) })) });
+  for (const fn of stale) fn.refs = references(fn.payload.content);
+  return stale.length;
 }
 
 export async function deleteItem(kind, name) {
@@ -115,6 +150,11 @@ export function references(content) {
 
 export function functionsUsing(variableName) {
   return itemsOf("function").filter((fn) => fn.payload && references(fn.payload.content).includes(variableName));
+}
+
+// Variables a function uses, from its decrypted content when available.
+export function functionRefs(fn) {
+  return fn.payload ? references(fn.payload.content) : fn.refs || [];
 }
 
 // ------------------------------------------------------------ idle lock

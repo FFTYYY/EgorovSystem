@@ -322,7 +322,8 @@ td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 /* ------------------------------------------------------------ functions */
 
 .fn-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-.fn { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 24px; padding: 18px 4px; border-bottom: 1px solid var(--line); }
+.fn { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px 20px; padding: 18px 4px; border-bottom: 1px solid var(--line); }
+.fn > .drag-handle { margin-top: 2px; }
 .fn-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .fn-name { font-size: 15.5px; color: var(--brass-bright); overflow-wrap: anywhere; }
 .fn-preview code { font-size: inherit; }
@@ -387,7 +388,44 @@ dialog::backdrop { background: rgba(6, 8, 7, 0.74); backdrop-filter: blur(2px); 
 .totp-setup > div { display: flex; flex-direction: column; gap: 6px; }
 .totp-secret { flex: none; font-size: 15px; letter-spacing: 0.04em; }
 .qr { display: block; max-width: 100%; height: auto; border-radius: 2px; image-rendering: pixelated; }
-.scope-custom { margin-top: 6px; }
+.scope-custom { margin-top: 6px; display: flex; flex-direction: column; gap: 14px; }
+
+/* scope picker: checkboxes that write rules into the text box */
+.scope-picker { display: flex; flex-direction: column; gap: 8px; }
+.picker-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.picker-head .picker-filter { width: min(220px, 50%); padding: 5px 10px; font-size: 14px; }
+.picker-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.picker-col { margin: 0; min-width: 0; padding: 6px 8px 8px; border: 1px solid var(--line); border-radius: var(--radius); }
+.picker-col legend { padding: 0 6px; font-size: 14px; color: var(--paper-dim); }
+.picker-list { display: flex; flex-direction: column; max-height: 232px; overflow-y: auto; }
+.picker-item { display: flex; align-items: center; gap: 9px; padding: 4px 6px; border-radius: 3px; cursor: pointer; font-size: 14px; }
+.picker-item:hover { background: rgba(231, 221, 199, 0.05); }
+.picker-item code { font-size: 13px; overflow-wrap: anywhere; color: var(--paper); }
+.picker-item.is-implied code { color: var(--paper-dim); }
+.picker-item input:disabled { cursor: not-allowed; opacity: 0.7; }
+.picker-note { margin-left: auto; padding-left: 8px; font-size: 12.5px; color: var(--faint); white-space: nowrap; }
+.picker-empty { margin: 4px 6px; font-size: 14px; color: var(--faint); }
+.scope-extra { display: block; margin-top: 2px; font-size: 13px; color: var(--faint); }
+
+/* drag to reorder */
+.cell-handle { width: 34px; padding-left: 4px; padding-right: 0; }
+.drag-handle { display: inline-grid; place-items: center; width: 26px; height: 30px; border-radius: 3px; color: var(--faint); cursor: grab; user-select: none; }
+.drag-handle:hover { color: var(--brass-bright); background: rgba(231, 221, 199, 0.05); }
+.drag-handle:active { cursor: grabbing; }
+.drag-handle.is-disabled { opacity: 0.25; cursor: not-allowed; }
+.drag-handle.is-disabled:hover { color: var(--faint); background: none; }
+.icon-grip { stroke-width: 3.2; }
+.is-dragging { opacity: 0.4; }
+tr.drop-before > td { box-shadow: inset 0 2px 0 var(--brass); }
+tr.drop-after > td { box-shadow: inset 0 -2px 0 var(--brass); }
+li.drop-before { box-shadow: inset 0 2px 0 var(--brass); }
+li.drop-after { box-shadow: inset 0 -2px 0 var(--brass); }
+
+/* "used by N functions" and its hover list */
+.used-by { display: block; margin-top: 3px; padding: 0; border: 0; background: none; font: inherit; font-size: 12.5px; color: var(--faint); cursor: help; text-align: left; }
+.used-by:hover, .used-by:focus-visible { color: var(--brass-bright); }
+.tooltip { position: fixed; z-index: 1100; display: flex; flex-wrap: wrap; gap: 4px; max-width: 340px; padding: 9px 11px 7px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--raised); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); pointer-events: none; }
+.tooltip-title { flex-basis: 100%; margin-bottom: 2px; font-size: 12.5px; color: var(--faint); }
 
 /* ------------------------------------------------------------ toasts */
 
@@ -413,7 +451,8 @@ dialog::backdrop { background: rgba(6, 8, 7, 0.74); backdrop-filter: blur(2px); 
 }
 
 @media (max-width: 600px) {
-  .fn { grid-template-columns: minmax(0, 1fr); }
+  .fn { grid-template-columns: auto minmax(0, 1fr); }
+  .fn-side { grid-column: 2; }
   .fn-side { flex-direction: row; align-items: center; }
   .setting { grid-template-columns: minmax(0, 1fr); }
   .field-row { grid-template-columns: minmax(0, 1fr); }

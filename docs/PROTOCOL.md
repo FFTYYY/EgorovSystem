@@ -9,7 +9,8 @@ produce byte-identical results; `tests/test_crypto_interop.py` checks this.
 
 The server, Cloudflare and anyone holding a copy of the database must not be
 able to read variable values, function contents or notes. Names, timestamps,
-device metadata and the audit log are visible to the server.
+display order, device metadata, the audit log and, for each function, the
+names of the variables it references are visible to the server.
 
 Not covered: a fully compromised server that serves malicious JavaScript to the
 admin UI could capture the master password the next time the admin signs in.
@@ -81,6 +82,16 @@ the shell). Substituted values are never expanded again.
 
 Items outside the device's scopes return the same `404` as missing items.
 Scopes are globs on names, optionally prefixed `variable:` or `function:`.
+
+A device may also read every variable that a function it may read references
+(*implicit grant*): it could not run the function without them. The browser
+computes each function's `${name}` references when saving it and sends them as
+`refs`; the server stores them in plaintext next to the ciphertext and uses them
+only for this check. Functions saved before schema 2 get their `refs` filled in
+by the admin UI after the next sign-in (`POST /api/v1/admin/items/refs`).
+
+Items are listed by `position` (insertion order unless reordered with
+`POST /api/v1/admin/items/order`).
 
 ## Admin API
 

@@ -58,10 +58,12 @@ const ICONS = {
   x: ["M6 6l12 12", "M18 6L6 18"],
   play: ["M7 5l12 7-12 7z"],
   menu: ["M4 7h16", "M4 12h16", "M4 17h16"],
+  terminal: ["M3 5h18v14H3z", "M7 10l3 2-3 2", "M12 15h5"],
+  grip: ["M9 6h.01", "M15 6h.01", "M9 12h.01", "M15 12h.01", "M9 18h.01", "M15 18h.01"],
 };
 
 export function icon(name, label) {
-  const svg = s("svg", { viewBox: "0 0 24 24", class: "icon", "aria-hidden": label ? "false" : "true", focusable: "false" });
+  const svg = s("svg", { viewBox: "0 0 24 24", class: `icon icon-${name}`, "aria-hidden": label ? "false" : "true", focusable: "false" });
   if (label) svg.setAttribute("aria-label", label);
   for (const d of ICONS[name] || []) svg.append(s("path", { d }));
   return svg;
@@ -81,6 +83,38 @@ export function seal(size = 84) {
     s("circle", { cx: 50, cy: 50, r: 31, class: "seal-ring" }),
     s("circle", { cx: 50, cy: 50, r: 27.5, class: "seal-ring thin" }),
     s("text", { x: 50, y: 50, class: "seal-letter", "text-anchor": "middle", "dominant-baseline": "central" }, "E"));
+}
+
+// ------------------------------------------------------------ hover tips
+
+// One shared tip, fixed to the viewport so tables that scroll sideways do not
+// clip it. Shown on hover and on keyboard focus.
+let tipNode = null;
+
+function hideTip() {
+  if (tipNode) tipNode.hidden = true;
+}
+
+export function hoverTip(trigger, build) {
+  const show = () => {
+    if (!tipNode) {
+      tipNode = h("div", { class: "tooltip", role: "tooltip" });
+      document.body.append(tipNode);
+      window.addEventListener("scroll", hideTip, { passive: true, capture: true });
+      window.addEventListener("hashchange", hideTip);
+    }
+    clear(tipNode).append(...build());
+    tipNode.hidden = false;
+    const rect = trigger.getBoundingClientRect();
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - tipNode.offsetWidth - 12));
+    const below = rect.bottom + 6 + tipNode.offsetHeight < window.innerHeight;
+    tipNode.style.left = `${left}px`;
+    tipNode.style.top = `${below ? rect.bottom + 6 : rect.top - tipNode.offsetHeight - 6}px`;
+  };
+  trigger.addEventListener("pointerenter", show);
+  trigger.addEventListener("focus", show);
+  trigger.addEventListener("pointerleave", hideTip);
+  trigger.addEventListener("blur", hideTip);
 }
 
 // ------------------------------------------------------------ feedback

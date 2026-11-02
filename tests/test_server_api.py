@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import time
 
@@ -317,6 +318,9 @@ def test_import_legacy_database(server, tmp_path):
         rows = {(r["kind"], r["name"]): r["blob"] for r in c.execute("SELECT * FROM items")}
     assert crypto.decrypt_item(vault_key, "function", "py", rows[("function", "py")]) == {
         "type": "python", "content": "print(1)", "note": ""}
+    with server.db.read() as c:
+        refs = {r["name"]: r["refs"] for r in c.execute("SELECT name, refs FROM items WHERE kind = 'function'")}
+    assert json.loads(refs["hello"]) == ["openai_keys"] and json.loads(refs["py"]) == []
     again = vault.import_legacy(server.db, vault_key, legacy)
     assert len(again.skipped_existing) == 3 and not again.imported
 
@@ -344,3 +348,73 @@ def test_backup_is_a_working_copy(server, admin, tmp_path):
     server.db.backup_to(destination)
     with Database(destination).read() as conn:
         assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 1
+
+
+# ---------------------------------------------------------------- schema 2: order and refs
+
+def test_migration_adds_columns_without_touching_data(server, admin, client):
+    admin.create_variable("zeta", "1")
+    admin.create_variable("alpha", "2")
+    token = admin.create_device("laptop")
+    with server.db.read() as conn:
+        before = conn.execute("SELECT kind, name, blob FROM items ORDER BY rowid").fetchall()
+        devices_before = conn.execute("SELECT id, auth_hash, wrapped_vault_key FROM devices").fetchall()
+    # Turn the database back into a schema 1 database, as on a server running 1.0.0.
+    with server.db.write() as conn:
+        conn.execute("ALTER TABLE items DROP COLUMN position")
+        conn.execute("ALTER TABLE items DROP COLUMN refs")
+    server.db.migrate()
+    server.db.migrate()  # running it twice is harmless
+    with server.db.read() as conn:
+        after = conn.execute("SELECT kind, name, blob FROM items ORDER BY position").fetchall()
+        devices_after = conn.execute("SELECT id, auth_hash, wrapped_vault_key FROM devices").fetchall()
+        version = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0]
+    assert [tuple(r) for r in after] == [tuple(r) for r in before]
+    assert [tuple(r) for r in devices_after] == [tuple(r) for r in devices_before]
+    assert version == "2"
+    assert device_get(client, token, "/api/v1/device/items/variable/zeta").status_code == 200
+
+
+def test_items_keep_insertion_order_and_can_be_reordered(admin, client):
+    for name in ("zeta", "alpha", "mid"):
+        admin.create_variable(name, "x")
+    names = lambda: [i["name"] for i in admin.get("/api/v1/admin/items").json()["items"] if i["kind"] == "variable"]
+    assert names() == ["zeta", "alpha", "mid"]
+    assert admin.post("/api/v1/admin/items/order", {"kind": "variable", "names": ["mid", "zeta", "alpha"]}).status_code == 200
+    assert names() == ["mid", "zeta", "alpha"]
+    admin.create_variable("newest", "x")
+    assert names()[-1] == "newest"
+    assert admin.post("/api/v1/admin/items/order", {"kind": "variable", "names": ["mid", "zeta"]}).status_code == 409
+    token = admin.create_device("laptop")
+    listed = [i["name"] for i in device_get(client, token, "/api/v1/device/items").json()["items"]]
+    assert listed == ["mid", "zeta", "alpha", "newest"]
+
+
+def test_granting_a_function_grants_the_variables_it_references(admin, client):
+    admin.create_variable("key-a", "secret-a")
+    admin.create_variable("other", "secret-b")
+    blob = crypto.encrypt_item(admin.vault_key, "function", "f", {"type": "cmd", "content": "use ${key-a}", "note": ""})
+    assert admin.post("/api/v1/admin/items", {"kind": "function", "name": "f", "blob": blob, "refs": ["key-a"]}).status_code == 201
+    token = admin.create_device("f-only", scopes=["function:f"])
+    assert device_get(client, token, "/api/v1/device/items/variable/key-a").status_code == 200
+    assert device_get(client, token, "/api/v1/device/items/variable/other").status_code == 404
+    listed = [(i["kind"], i["name"]) for i in device_get(client, token, "/api/v1/device/items").json()["items"]]
+    assert listed == [("function", "f"), ("variable", "key-a")]
+    # Dropping the reference drops the grant.
+    assert admin.put("/api/v1/admin/items/function/f", {"blob": blob, "refs": []}).status_code == 200
+    assert device_get(client, token, "/api/v1/device/items/variable/key-a").status_code == 404
+    # The UI can also fill in refs for functions saved before refs existed.
+    response = admin.post("/api/v1/admin/items/refs", {"items": [{"name": "f", "refs": ["key-a", "other"]}]})
+    assert response.status_code == 200 and response.json()["updated"] == 1
+    assert device_get(client, token, "/api/v1/device/items/variable/other").status_code == 200
+    stored = next(i for i in admin.get("/api/v1/admin/items").json()["items"] if i["name"] == "f")
+    assert stored["refs"] == ["key-a", "other"]
+
+
+def test_bad_refs_are_rejected(admin):
+    blob = crypto.encrypt_item(admin.vault_key, "function", "g", {"type": "cmd", "content": "", "note": ""})
+    bad = admin.post("/api/v1/admin/items", {"kind": "function", "name": "g", "blob": blob, "refs": ["../etc"]})
+    assert bad.status_code == 400 and bad.json()["error"] == "bad_refs"
+    vblob = crypto.encrypt_item(admin.vault_key, "variable", "v", {"value": "1"})
+    assert admin.post("/api/v1/admin/items", {"kind": "variable", "name": "v", "blob": vblob, "refs": []}).status_code == 400
+    assert admin.post("/api/v1/admin/items/refs", {"items": [{"name": "g", "refs": "nope"}]}).status_code == 400

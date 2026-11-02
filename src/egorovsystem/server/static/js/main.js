@@ -1,6 +1,6 @@
 import { api, setSignedOutHandler } from "./api.js";
 import { clear, h, icon, seal, toast } from "./dom.js";
-import { applySession, isUnlocked, itemsOf, loadItems, lock, session, watchIdle } from "./state.js";
+import { applySession, isUnlocked, itemsOf, loadItems, lock, session, syncRefs, watchIdle } from "./state.js";
 import { renderFatal, renderLogin, renderUninitialized, renderUnlock } from "./views/login.js";
 import { renderOverview } from "./views/overview.js";
 import { renderVariables } from "./views/variables.js";
@@ -94,6 +94,9 @@ async function route() {
 
 async function enterApp() {
   await loadItems();
+  // Record which variables each function uses (functions saved before this
+  // existed have none), so function grants also cover those variables.
+  syncRefs().catch(() => {});
   renderShell();
   watchIdle(() => {
     lock();

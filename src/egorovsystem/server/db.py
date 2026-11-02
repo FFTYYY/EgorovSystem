@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS items (
     blob       TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
+    -- schema 2: display order, and for functions the variable names they
+    -- reference (plaintext names, set by the browser), used for implicit grants
+    position   REAL,
+    refs       TEXT,
     PRIMARY KEY (kind, name)
 );
 
@@ -136,10 +140,22 @@ class Database:
         with self.read() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(SCHEMA)
-            conn.execute(
-                "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?)",
-                (str(SCHEMA_VERSION),),
-            )
+        self.migrate()
+
+    def migrate(self) -> None:
+        """Bring an existing database up to SCHEMA_VERSION.
+
+        Only ever adds columns and fills them in; it never drops or rewrites
+        data, so devices and stored items keep working across upgrades."""
+        with self.write() as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+            if "position" not in columns:
+                conn.execute("ALTER TABLE items ADD COLUMN position REAL")
+            if "refs" not in columns:
+                conn.execute("ALTER TABLE items ADD COLUMN refs TEXT")
+            # Items without a position keep their insertion order.
+            conn.execute("UPDATE items SET position = rowid WHERE position IS NULL")
+            set_meta(conn, "schema_version", str(SCHEMA_VERSION))
 
     def exists(self) -> bool:
         return self.path.exists()
@@ -202,6 +218,39 @@ def audit(
     # Prune old entries now and then instead of running a scheduler.
     if random.random() < 0.01:
         conn.execute("DELETE FROM audit WHERE ts < ?", (now() - retention_days * 86400,))
+
+
+def next_position(conn: sqlite3.Connection, kind: str) -> float:
+    """New items go to the end of their list."""
+    return conn.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM items WHERE kind = ?", (kind,)).fetchone()[0]
+
+
+def parse_refs(value: Optional[str]) -> Optional[list]:
+    if not value:
+        return None
+    try:
+        refs = json.loads(value)
+    except ValueError:
+        return None
+    return refs if isinstance(refs, list) else None
+
+
+def row_to_item(row: sqlite3.Row) -> dict:
+    return {
+        "kind": row["kind"],
+        "name": row["name"],
+        "blob": row["blob"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "position": row["position"],
+        "refs": parse_refs(row["refs"]),
+    }
+
+
+def function_refs(conn: sqlite3.Connection) -> dict:
+    """{function name: [variable names it references]} for functions that have refs recorded."""
+    rows = conn.execute("SELECT name, refs FROM items WHERE kind = 'function' AND refs IS NOT NULL")
+    return {row["name"]: parse_refs(row["refs"]) or [] for row in rows}
 
 
 def row_to_device(row: sqlite3.Row) -> dict:

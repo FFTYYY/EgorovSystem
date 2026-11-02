@@ -56,10 +56,10 @@ def live(tmp_path, monkeypatch):
     vault_key = vault.unlock(db, PASSWORD)
     with db.write() as conn:
         for name, value in VARIABLES.items():
-            conn.execute("INSERT INTO items VALUES ('variable', ?, ?, ?, ?)",
+            conn.execute("INSERT INTO items (kind, name, blob, created_at, updated_at) VALUES ('variable', ?, ?, ?, ?)",
                          (name, crypto.encrypt_item(vault_key, "variable", name, {"value": value, "note": ""}), now(), now()))
         for name, payload in FUNCTIONS.items():
-            conn.execute("INSERT INTO items VALUES ('function', ?, ?, ?, ?)",
+            conn.execute("INSERT INTO items (kind, name, blob, created_at, updated_at) VALUES ('function', ?, ?, ?, ?)",
                          (name, crypto.encrypt_item(vault_key, "function", name, {**payload, "note": ""}), now(), now()))
     full = add_device(db, vault_key, "workstation", ["*"])
     limited = add_device(db, vault_key, "ci", ["variable:openai_*", "variable:name", "function:*"])
@@ -186,3 +186,18 @@ def test_ego_runs_functions(live, monkeypatch, capfd):
         run_command.run(["no_such_function"])
     assert exc.value.code == 1
     assert "not found" in capfd.readouterr().err
+
+
+def test_granting_a_function_grants_its_variables(live, monkeypatch):
+    # The admin UI records which variables each function uses; a device that
+    # may run a function can then read exactly those variables.
+    with live.db.write() as conn:
+        conn.execute("UPDATE items SET refs = ? WHERE kind = 'function' AND name = 'greet'", (json.dumps(["name"]),))
+    only_greet = add_device(live.db, live.vault_key, "only-greet", ["function:greet"])
+    use(monkeypatch, live, only_greet)
+    assert egorovsystem.get_function("greet")["content"] == "echo hello-world"
+    assert egorovsystem.get_variable("name") == "world"
+    with pytest.raises(egorovsystem.NotFoundError):
+        egorovsystem.get_variable("openai_keys")
+    names = [(i["kind"], i["name"]) for i in client_mod.get_client().list_items()]
+    assert names == [("function", "greet"), ("variable", "name")]

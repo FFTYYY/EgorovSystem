@@ -17,7 +17,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from .. import __version__, crypto
-from ..names import ITEM_KINDS, is_valid_kind, is_valid_name, normalize_scopes
+from ..names import ITEM_KINDS, is_valid_kind, is_valid_name, normalize_refs, normalize_scopes
 from . import db as dbm
 from .auth import (
     check_verifier, clear_session_cookie, create_session, decode_auth_key, error, fake_kdf,
@@ -242,8 +242,21 @@ async def overview(request: Request) -> Response:
 @require_admin
 async def list_items(request: Request) -> Response:
     with request.app.state.db.read() as conn:
-        rows = conn.execute("SELECT * FROM items ORDER BY kind, name").fetchall()
-    return JSONResponse({"items": [dict(row) for row in rows]})
+        rows = conn.execute("SELECT * FROM items ORDER BY kind, position, rowid").fetchall()
+    return JSONResponse({"items": [dbm.row_to_item(row) for row in rows]})
+
+
+def _refs_json(kind: str, body: dict) -> Union[str, None, Response]:
+    """Functions may carry the variable names they reference (computed by the
+    browser). Returns the JSON to store, None to leave it alone, or an error."""
+    if "refs" not in body:
+        return None
+    if kind != "function":
+        return error(400, "bad_refs", "Only functions have refs.")
+    try:
+        return json.dumps(normalize_refs(body["refs"]))
+    except ValueError as exc:
+        return error(400, "bad_refs", str(exc))
 
 
 def _check_item(kind: object, name: object, blob: object) -> Optional[Response]:
@@ -265,15 +278,19 @@ async def create_item(request: Request) -> Response:
     problem = _check_item(kind, name, blob)
     if problem:
         return problem
+    refs = _refs_json(kind, body)
+    if isinstance(refs, Response):
+        return refs
     now = dbm.now()
     with request.app.state.db.write() as conn:
         if conn.execute("SELECT 1 FROM items WHERE kind = ? AND name = ?", (kind, name)).fetchone():
             return error(409, "exists", f"A {kind} with this name already exists.")
-        conn.execute("INSERT INTO items (kind, name, blob, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                     (kind, name, blob, now, now))
+        conn.execute(
+            "INSERT INTO items (kind, name, blob, created_at, updated_at, position, refs) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (kind, name, blob, now, now, dbm.next_position(conn, kind), refs))
         _audit(request, conn, f"{kind}.create", name)
         row = conn.execute("SELECT * FROM items WHERE kind = ? AND name = ?", (kind, name)).fetchone()
-    return JSONResponse(dict(row), status_code=201)
+    return JSONResponse(dbm.row_to_item(row), status_code=201)
 
 
 @require_admin
@@ -287,6 +304,9 @@ async def update_item(request: Request) -> Response:
     problem = _check_item(kind, new_name, blob)
     if problem:
         return problem
+    refs = _refs_json(kind, body)
+    if isinstance(refs, Response):
+        return refs
     with request.app.state.db.write() as conn:
         if not conn.execute("SELECT 1 FROM items WHERE kind = ? AND name = ?", (kind, name)).fetchone():
             return error(404, "not_found", "No such item.")
@@ -300,8 +320,56 @@ async def update_item(request: Request) -> Response:
             conn.execute("UPDATE items SET blob = ?, updated_at = ? WHERE kind = ? AND name = ?",
                          (blob, dbm.now(), kind, name))
             _audit(request, conn, f"{kind}.update", name)
+        if refs is not None:
+            conn.execute("UPDATE items SET refs = ? WHERE kind = ? AND name = ?", (refs, kind, new_name))
         row = conn.execute("SELECT * FROM items WHERE kind = ? AND name = ?", (kind, new_name)).fetchone()
-    return JSONResponse(dict(row))
+    return JSONResponse(dbm.row_to_item(row))
+
+
+@require_admin
+async def reorder_items(request: Request) -> Response:
+    """Save the order the admin dragged items into. The list must contain
+    every item of that kind exactly once."""
+    body = await _json(request)
+    if isinstance(body, Response):
+        return body
+    kind, names = body.get("kind"), body.get("names")
+    if not is_valid_kind(kind) or not isinstance(names, list):
+        return error(400, "bad_request", "Send the kind and the full list of names in the new order.")
+    with request.app.state.db.write() as conn:
+        existing = [row["name"] for row in conn.execute("SELECT name FROM items WHERE kind = ?", (kind,))]
+        if len(names) != len(existing) or set(names) != set(existing):
+            return error(409, "items_changed", "The list changed in the meantime. Reload and try again.")
+        for position, name in enumerate(names, start=1):
+            conn.execute("UPDATE items SET position = ? WHERE kind = ? AND name = ?", (position, kind, name))
+        _audit(request, conn, f"{kind}.reorder", detail={"count": len(names)})
+    return JSONResponse({"ok": True})
+
+
+@require_admin
+async def set_refs(request: Request) -> Response:
+    """Record which variables functions reference, without touching their
+    ciphertext. The UI calls this to fill in functions saved before refs existed."""
+    body = await _json(request)
+    if isinstance(body, Response):
+        return body
+    entries = body.get("items")
+    if not isinstance(entries, list) or len(entries) > 2000:
+        return error(400, "bad_request", "items must be a list of {name, refs}.")
+    updates = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not is_valid_name(entry.get("name")):
+            return error(400, "bad_request", "Each entry needs a function name.")
+        try:
+            updates.append((json.dumps(normalize_refs(entry.get("refs"))), entry["name"]))
+        except ValueError as exc:
+            return error(400, "bad_refs", str(exc))
+    with request.app.state.db.write() as conn:
+        changed = sum(conn.execute("UPDATE items SET refs = ? WHERE kind = 'function' AND name = ?", update).rowcount
+                      for update in updates)
+        if changed:
+            _audit(request, conn, "function.refs", detail={"count": changed})
+    return JSONResponse({"ok": True, "updated": changed})
 
 
 @require_admin
@@ -656,6 +724,8 @@ routes = [
     Route("/api/v1/admin/overview", overview, methods=["GET"]),
     Route("/api/v1/admin/items", list_items, methods=["GET"]),
     Route("/api/v1/admin/items", create_item, methods=["POST"]),
+    Route("/api/v1/admin/items/order", reorder_items, methods=["POST"]),
+    Route("/api/v1/admin/items/refs", set_refs, methods=["POST"]),
     Route("/api/v1/admin/items/{kind}/{name}", update_item, methods=["PUT"]),
     Route("/api/v1/admin/items/{kind}/{name}", delete_item, methods=["DELETE"]),
     Route("/api/v1/admin/devices", list_devices, methods=["GET"]),

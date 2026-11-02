@@ -1,7 +1,8 @@
 // Functions: commands and Python snippets that `EGO <name>` runs.
 
 import { busy, clear, confirmAction, copyText, field, formError, h, icon, modal, timeTag, toast } from "../dom.js";
-import { deleteItem, findItem, itemsOf, NAME_RE, references, saveItem } from "../state.js";
+import { deleteItem, findItem, itemsOf, NAME_RE, references, reorder, saveItem } from "../state.js";
+import { dragHandle, focusHandle, makeSortable } from "../sortable.js";
 import { searchBox } from "./variables.js";
 
 const TYPES = [
@@ -120,6 +121,11 @@ function firstLine(text, type) {
 export async function renderFunctions(page, ctx) {
   let filter = "";
   const list = h("ul", { class: "fn-list" });
+  makeSortable(list, "li.fn", (names, moved) => {
+    reorder("function", names).catch((err) => { toast(err.message, "error"); draw(); });
+    draw();
+    focusHandle(list, moved);
+  });
   const count = h("span", { class: "toolbar-count" });
   const empty = h("div", { class: "empty" });
 
@@ -130,7 +136,8 @@ export async function renderFunctions(page, ctx) {
     clear(list);
     for (const item of rows) {
       const p = item.payload;
-      list.append(h("li", { class: "fn" },
+      list.append(h("li", { class: "fn", dataset: { key: item.name } },
+        dragHandle(item.name, !filter),
         h("div", { class: "fn-main" },
           h("div", { class: "fn-title" },
             h("code", { class: "fn-name" }, item.name),
@@ -142,8 +149,12 @@ export async function renderFunctions(page, ctx) {
         h("div", { class: "fn-side" },
           h("span", { class: "fn-time" }, "修改于 ", timeTag(item.updated_at)),
           h("div", { class: "fn-actions" },
-            h("button", { class: "icon-button", type: "button", title: "复制运行命令", "aria-label": `复制 EGO ${item.name}`,
-              onclick: () => copyText(`EGO ${item.name}`, "运行命令") }, icon("play")),
+            h("button", { class: "icon-button", type: "button", title: `复制运行命令：EGO ${item.name}`,
+              "aria-label": `复制运行命令 EGO ${item.name}`,
+              onclick: () => copyText(`EGO ${item.name}`, "运行命令") }, icon("terminal")),
+            h("button", { class: "icon-button", type: "button", title: "复制函数内容（未替换变量）",
+              "aria-label": `复制 ${item.name} 的内容`, disabled: !p,
+              onclick: () => copyText(p.content, `${item.name} 的内容`) }, icon("copy")),
             h("button", { class: "icon-button", type: "button", title: "编辑", "aria-label": `编辑 ${item.name}`,
               disabled: !p, onclick: () => editFunction(item, () => { draw(); ctx.refreshNav(); }) }, icon("edit")),
             h("button", { class: "icon-button danger", type: "button", title: "删除", "aria-label": `删除 ${item.name}`,

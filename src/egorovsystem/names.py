@@ -53,6 +53,32 @@ def scope_allows(scopes: Iterable[str], kind: str, name: str) -> bool:
     return False
 
 
+def variables_granted_by_functions(scopes: Iterable[str], refs_by_function: dict) -> set:
+    """Variables a device may read because a function it may read uses them.
+
+    Granting a function grants the variables it references: the device could
+    not run the function without them anyway."""
+    scopes = list(scopes)
+    granted: set = set()
+    for function, refs in refs_by_function.items():
+        if scope_allows(scopes, "function", function):
+            granted.update(refs)
+    return granted
+
+
+def normalize_refs(refs: object) -> list[str]:
+    """Validate the list of variable names a function references."""
+    if not isinstance(refs, list) or len(refs) > 256:
+        raise ValueError("refs must be a list of at most 256 names")
+    result: list[str] = []
+    for name in refs:
+        if not is_valid_name(name):
+            raise ValueError(f"invalid variable name in refs: {name!r}")
+        if name not in result:
+            result.append(name)
+    return result
+
+
 def find_references(content: str) -> list[str]:
     """Variable names referenced as ``${name}``, in order of first use."""
     seen: list[str] = []
