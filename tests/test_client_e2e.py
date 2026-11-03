@@ -188,6 +188,72 @@ def test_ego_runs_functions(live, monkeypatch, capfd):
     assert "not found" in capfd.readouterr().err
 
 
+def test_ego_get_prints_only_the_value(live, monkeypatch, capfd):
+    use(monkeypatch, live, live.limited)
+    assert run_command.main(["--get", "openai_keys"]) == 0
+    captured = capfd.readouterr()
+    assert captured.out == "sk-live-123" and captured.err == ""
+    with pytest.raises(SystemExit) as exc:
+        run_command.run(["--get", "aws_access"])  # outside this device's scopes
+    assert exc.value.code == 1
+    captured = capfd.readouterr()
+    assert captured.out == "" and "not found" in captured.err
+    assert run_command.main(["--get"]) == 2
+
+
+def test_ego_output_is_the_exact_bytes(live, monkeypatch, capfdbinary, tmp_path):
+    value = "第一行\r\nline two\nend"
+    script = "print('${multi}')\n"
+    with live.db.write() as conn:
+        conn.execute("INSERT INTO items (kind, name, blob, created_at, updated_at) VALUES ('variable', 'multi', ?, ?, ?)",
+                     (crypto.encrypt_item(live.vault_key, "variable", "multi", {"value": value, "note": ""}), now(), now()))
+        conn.execute("INSERT INTO items (kind, name, blob, created_at, updated_at) VALUES ('function', 'script', ?, ?, ?)",
+                     (crypto.encrypt_item(live.vault_key, "function", "script",
+                                          {"type": "python", "content": script, "note": ""}), now(), now()))
+    use(monkeypatch, live, live.full)
+    shown = script.replace("${multi}", value).encode("utf-8")
+
+    # Piped or redirected: UTF-8, newlines untouched, nothing added.
+    assert run_command.main(["--get", "multi"]) == 0
+    assert capfdbinary.readouterr().out == value.encode("utf-8")
+    assert run_command.main(["--show", "script"]) == 0
+    assert capfdbinary.readouterr().out == shown  # no "# type" line when not on a terminal
+
+    target = tmp_path / "out.txt"
+    assert run_command.main(["--get", "-o", str(target), "multi"]) == 0
+    assert target.read_bytes() == value.encode("utf-8") and capfdbinary.readouterr().out == b""
+    if sys.platform != "win32":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert run_command.main(["--show", "script", "--output", str(target)]) == 0
+    assert target.read_bytes() == shown
+    assert run_command.main(["--get", "-o"]) == 2
+
+
+def test_ego_help_prints_notes(live, monkeypatch, capfd):
+    def add(kind, name, payload):
+        blob = crypto.encrypt_item(live.vault_key, kind, name, payload)
+        with live.db.write() as conn:
+            conn.execute("INSERT OR REPLACE INTO items (kind, name, blob, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                         (kind, name, blob, now(), now()))
+    add("function", "greet", {**FUNCTIONS["greet"], "note": "Say hello to ${name}"})
+    add("variable", "openai_keys", {"value": VARIABLES["openai_keys"], "note": "Team key"})
+    add("variable", "greet", {"value": "hi", "note": ""})
+    use(monkeypatch, live, live.full)
+
+    assert run_command.main(["--help", "openai_keys"]) == 0
+    assert capfd.readouterr().out == "Team key\n"
+    assert run_command.main(["--help", "name"]) == 0
+    captured = capfd.readouterr()
+    assert captured.out == "" and "has no note" in captured.err
+    assert run_command.main(["--help", "greet"]) == 0  # both a function and a variable
+    assert capfd.readouterr().out == "function greet: Say hello to ${name}\nvariable greet: (no note)\n"
+    assert run_command.main(["--help"]) == 0
+    assert "EGO --get <variable>" in capfd.readouterr().out
+    with pytest.raises(SystemExit) as exc:
+        run_command.run(["--help", "missing"])
+    assert exc.value.code == 1 and "no variable or function" in capfd.readouterr().err
+
+
 def test_granting_a_function_grants_its_variables(live, monkeypatch):
     # The admin UI records which variables each function uses; a device that
     # may run a function can then read exactly those variables.

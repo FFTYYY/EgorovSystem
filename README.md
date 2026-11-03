@@ -66,10 +66,15 @@ EGO --whoami
 | `get_function("name")` | 返回 `{"type", "content", "note"}`，`${变量}` 已替换 |
 | `set_variable("name", "value")` | 在当前进程里覆盖一个变量，方便测试 |
 | `EGO name [参数…]` | 运行函数，参数会传给命令，返回命令的退出码 |
-| `EGO --show name` / `--list` / `--whoami` | 查看函数内容、列出可读条目、查看本机设备 |
+| `EGO --get name [-o 文件]` | 只输出变量的值，不带任何其他内容 |
+| `EGO --show name [-o 文件]` | 输出函数内容（`${变量}` 已替换） |
+| `EGO --help name` | 输出变量或函数的备注；同名的变量和函数都存在时两个都列出 |
+| `EGO --list` / `--whoami` | 列出可读条目、查看本机设备 |
 | `egolocal-run [--port 11451]` | 启动本机代理 |
 
 函数里可以用 `${变量名}` 引用变量，客户端在运行前替换。不存在的名字原样保留，所以 `${HOME}` 这类 shell 写法不受影响。
+
+`--get` 和 `--show` 的输出被重定向或接管道时，是逐字节的原始内容（UTF-8，换行不转换，结尾不加换行），在终端上显示时才补一个换行。Windows PowerShell 5.1 的 `>` 会把输出转成 UTF-16，看起来每个字符之间多了空格，所以在 PowerShell 5.1 里请用 `-o 文件`，例如 `EGO --get key-hahn -o hahn.pem`。用 `-o` 写出的文件在 macOS 和 Linux 上权限是 600。
 
 python 类型的函数用运行 EGO 的同一个解释器执行。如果脚本带有 [PEP 723](https://peps.python.org/pep-0723/) 依赖声明，并且机器上装了 uv，就用 `uv run` 执行，依赖会自动安装。
 
