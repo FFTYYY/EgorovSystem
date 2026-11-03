@@ -138,8 +138,21 @@ def show_notes(name: str) -> int:
     return 0
 
 
+def utf8_pipes() -> None:
+    """On Windows a pipe defaults to the ANSI code page, which cannot carry
+    notes or device names in Chinese. Use UTF-8 whenever we are not writing
+    to a console."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if not stream.isatty() and stream.encoding.lower().replace("-", "") != "utf8":
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main(argv: Optional[list] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    utf8_pipes()
     if not argv or (argv[0] in ("-h", "--help") and len(argv) == 1):
         print(__doc__.strip())
         return 0

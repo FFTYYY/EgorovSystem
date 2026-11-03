@@ -236,12 +236,12 @@ def test_ego_help_prints_notes(live, monkeypatch, capfd):
             conn.execute("INSERT OR REPLACE INTO items (kind, name, blob, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                          (kind, name, blob, now(), now()))
     add("function", "greet", {**FUNCTIONS["greet"], "note": "Say hello to ${name}"})
-    add("variable", "openai_keys", {"value": VARIABLES["openai_keys"], "note": "Team key"})
+    add("variable", "openai_keys", {"value": VARIABLES["openai_keys"], "note": "团队的 key"})
     add("variable", "greet", {"value": "hi", "note": ""})
     use(monkeypatch, live, live.full)
 
     assert run_command.main(["--help", "openai_keys"]) == 0
-    assert capfd.readouterr().out == "Team key\n"
+    assert capfd.readouterr().out == "团队的 key\n"
     assert run_command.main(["--help", "name"]) == 0
     captured = capfd.readouterr()
     assert captured.out == "" and "has no note" in captured.err
