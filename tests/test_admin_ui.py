@@ -107,7 +107,7 @@ def test_service_worker_stores_every_interface_file_and_nothing_else():
     files = source[source.index("const FILES = ["):]
     listed = set(re.findall(r'^\s+"([^"]+)",$', files[:files.index("];")], re.M))
     on_disk = {f"static/{p.relative_to(STATIC).as_posix()}" for p in STATIC.rglob("*")
-               if (p.suffix in {".js", ".css", ".woff2", ".webmanifest", ".svg"} or p.name.startswith("favicon-"))
+               if (p.suffix in {".js", ".css", ".woff2", ".webmanifest", ".svg"} or p.name.startswith(("favicon-", "mascot-")))
                and p.name != "sw.js"}
     assert listed == on_disk
     # The API is never answered from the cache.
@@ -122,3 +122,8 @@ def test_only_the_service_worker_policy_may_create_trusted_values(client):
     assert creators == ["js/pwa.js"]
     pwa = (STATIC / "js" / "pwa.js").read_text(encoding="utf-8")
     assert 'createPolicy("egorov-sw"' in pwa and "createHTML" not in pwa and "createScript:" not in pwa
+
+
+def test_status_reports_the_interface_fingerprint(client):
+    # update.js compares this with the directory it was loaded from.
+    assert f'assets/{client.get("/api/v1/admin/status").json()["ui"]}/' == asset_base(client)

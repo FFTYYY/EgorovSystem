@@ -2,7 +2,7 @@
 // bar on top and a tab bar at the bottom, with the pages that have no tab of
 // their own under "更多".
 
-import { clear, h, icon, modal, seal } from "./dom.js";
+import { clear, h, icon, mascot, modal } from "./dom.js";
 import { install, installMode } from "./pwa.js";
 import { session } from "./state.js";
 
@@ -33,7 +33,7 @@ function desktopShell(root, { routes, onLock, onSignOut }) {
   const page = h("main", { class: "page", id: "page", tabindex: "-1" });
   clear(root).append(h("div", { class: "shell" },
     h("aside", { class: "sidebar" },
-      h("a", { class: "brand", href: "#/overview" }, seal(34), h("span", { class: "brand-name" }, "Egorov")),
+      h("a", { class: "brand", href: "#/overview" }, mascot(42), h("span", { class: "brand-name" }, "Egorov")),
       nav,
       h("div", { class: "sidebar-foot" },
         h("p", { class: "who" }, h("span", { class: "who-label" }, "管理员"), h("span", { class: "who-name" }, session.username)),
@@ -66,7 +66,7 @@ function phoneShell(root, { routes, onLock, onSignOut }) {
   const page = h("main", { class: "page", id: "page", tabindex: "-1" });
   clear(root).append(h("div", { class: "m-shell" },
     h("header", { class: "appbar" },
-      h("a", { class: "brand", href: "#/overview" }, seal(28), h("span", { class: "brand-name" }, "Egorov")),
+      h("a", { class: "brand", href: "#/overview" }, mascot(34), h("span", { class: "brand-name" }, "Egorov")),
       h("button", { class: "icon-button appbar-lock", type: "button", title: "锁定", "aria-label": "锁定", onclick: onLock },
         icon("lock"))),
     page,

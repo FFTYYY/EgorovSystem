@@ -2,6 +2,7 @@ import { api, setSignedOutHandler } from "./api.js";
 import { clear, closeModals, h, toast } from "./dom.js";
 import { isMobile, onLayoutChange } from "./layout.js";
 import { initPwa } from "./pwa.js";
+import { updateIfWaiting, watchForUpdates } from "./update.js";
 import { buildShell } from "./shell.js";
 import { applySession, isUnlocked, itemsOf, loadItems, lock, session, syncRefs, watchIdle } from "./state.js";
 import { renderFatal, renderLogin, renderUninitialized, renderUnlock } from "./views/login.js";
@@ -103,6 +104,7 @@ function showUnlock(message) {
 function lockNow(message) {
   leaveApp();
   showUnlock(message);
+  updateIfWaiting();
 }
 
 async function signOut() {
@@ -114,10 +116,15 @@ async function signOut() {
   leaveApp();
   showLogin();
   toast("已退出登录。");
+  updateIfWaiting();
 }
 
 async function boot() {
   initPwa();
+  // Reloading costs nothing while locked; while unlocked it means typing the
+  // password again, which is fine when the app was just brought back, but not
+  // in the middle of editing.
+  watchForUpdates({ safeToReload: (resumed) => !document.querySelector("dialog[open]") && (!isUnlocked() || resumed) });
   setSignedOutHandler(() => {
     if (!session.username) return;
     leaveApp();

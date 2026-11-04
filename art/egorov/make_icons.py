@@ -4,7 +4,8 @@ Usage: python make_icons.py head.png OUT_DIR   (needs pillow, numpy, scipy)
 - sticker: a dark outline plus an outer ring in the UI's paper colour, so it
   stands out on dark home screens
 - icon-*.png: transparent ("any"), maskable-*.png and apple-touch-icon.png: on
-  the reading-room green with a soft glow, the head inside the safe zone
+  the UI's slate blue with a soft glow, the head inside the safe zone
+- favicon-*.png for browser tabs, mascot-*.webp for the mark inside the UI
 """
 import os
 import sys
@@ -61,11 +62,11 @@ def fit(art, box):
 
 
 def ground():
-    """The app's dark green with a faint brass glow near the top."""
+    """The app's dark slate blue with a faint glow near the top."""
     y, x = np.mgrid[0:S, 0:S].astype(np.float32) / S
     d = np.sqrt(((x - 0.5) / 0.9) ** 2 + ((y - 0.18) / 0.7) ** 2)
     t = np.clip(d, 0, 1)[..., None]
-    top, mid, edge = np.array([34, 42, 34]), np.array([21, 26, 22]), np.array([16, 20, 17])
+    top, mid, edge = np.array([34, 40, 52]), np.array([21, 25, 33]), np.array([16, 19, 25])
     rgb = np.where(t < 0.55, top + (mid - top) * (t / 0.55), mid + (edge - mid) * ((t - 0.55) / 0.45))
     return Image.fromarray(rgb.astype(np.uint8), "RGB").convert("RGBA")
 
@@ -99,6 +100,13 @@ def main(src, out):
     on_ground(art, 0.84).resize((180, 180), Image.LANCZOS).save(os.path.join(out, "apple-touch-icon.png"), optimize=True)
     for size in (64, 32):
         icon.resize((size, size), Image.LANCZOS).save(os.path.join(out, f"favicon-{size}.png"), optimize=True)
+    # the mark inside the UI (sign-in plate, sidebar, app bar): cropped tight
+    ui = Image.new("RGBA", (S, S))
+    g = fit(art, S)
+    ui.alpha_composite(g, ((S - g.width) // 2, (S - g.height) // 2))
+    for size in (320, 96):
+        ui.resize((size, size), Image.LANCZOS).save(os.path.join(out, f"mascot-{size}.webp"), "WEBP",
+                                                    quality=92, alpha_quality=100, method=6)
     print("wrote", sorted(os.listdir(out)))
 
 

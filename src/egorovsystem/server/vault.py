@@ -94,6 +94,7 @@ def reset_password(database: dbm.Database, recovery_text: str, new_password: str
             "password_changed_at = ? WHERE id = 1",
             (json.dumps(kdf), salt, verifier, crypto.wrap_vault_key(keys.wrap_key, vault_key), dbm.now()))
         conn.execute("DELETE FROM sessions")
+        dbm.forget_trusted_browsers(conn)
         dbm.audit(conn, "cli", "admin.password.reset")
 
 
@@ -102,6 +103,7 @@ def disable_totp(database: dbm.Database) -> bool:
         changed = conn.execute(
             "UPDATE admin SET totp_enabled = 0, totp_secret = NULL WHERE id = 1 AND totp_enabled = 1").rowcount
         if changed:
+            dbm.forget_trusted_browsers(conn)
             dbm.audit(conn, "cli", "admin.totp.disable")
     return bool(changed)
 
@@ -109,6 +111,7 @@ def disable_totp(database: dbm.Database) -> bool:
 def revoke_sessions(database: dbm.Database) -> int:
     with database.write() as conn:
         count = conn.execute("DELETE FROM sessions").rowcount
+        dbm.forget_trusted_browsers(conn)
         dbm.audit(conn, "cli", "session.revoke_all", detail={"count": count})
     return count
 

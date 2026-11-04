@@ -363,6 +363,7 @@ def test_migration_adds_columns_without_touching_data(server, admin, client):
     with server.db.write() as conn:
         conn.execute("ALTER TABLE items DROP COLUMN position")
         conn.execute("ALTER TABLE items DROP COLUMN refs")
+        conn.execute("DROP TABLE trusted_browsers")
     with server.db.write() as conn:
         conn.execute("UPDATE meta SET value = '1' WHERE key = 'schema_version'")
     server.db.migrate()
@@ -373,8 +374,10 @@ def test_migration_adds_columns_without_touching_data(server, admin, client):
         version = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0]
     assert [tuple(r) for r in after] == [tuple(r) for r in reversed(before)]  # newest first
     assert [tuple(r) for r in devices_after] == [tuple(r) for r in devices_before]
-    assert version == "3"
+    assert version == "4"
     assert device_get(client, token, "/api/v1/device/items/variable/zeta").status_code == 200
+    with server.db.read() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM trusted_browsers").fetchone()[0] == 0
 
 
 def test_upgrading_from_schema_2_lists_newest_first_once(server, admin):
@@ -437,3 +440,83 @@ def test_bad_refs_are_rejected(admin):
     vblob = crypto.encrypt_item(admin.vault_key, "variable", "v", {"value": "1"})
     assert admin.post("/api/v1/admin/items", {"kind": "variable", "name": "v", "blob": vblob, "refs": []}).status_code == 400
     assert admin.post("/api/v1/admin/items/refs", {"items": [{"name": "g", "refs": "nope"}]}).status_code == 400
+
+
+def _enable_totp(admin):
+    secret = admin.post("/api/v1/admin/totp/setup", {"current_auth_key": admin.current()}).json()["secret"]
+    step = int(time.time() // 30)
+    assert admin.post("/api/v1/admin/totp/enable", {"code": totp_code(secret, step)}).status_code == 200
+    return secret, step
+
+
+def test_a_browser_that_passed_totp_needs_only_the_password_for_48_hours(admin, client, server):
+    secret, step = _enable_totp(admin)
+    browser = TestClient(client.app)
+    first = AdminSession(browser)
+    assert first.login(expect=401).json()["remember_seconds"] == 48 * 3600
+    first.login(totp_code=totp_code(secret, step + 1))
+    assert browser.cookies.get("egorov-trust")
+    # The same browser signs in again with the password alone ...
+    AdminSession(browser).login()
+    assert audit_entries(server)[-1]["detail"] == {"totp": "remembered"}
+    # ... other browsers still need the code ...
+    assert AdminSession(TestClient(client.app)).login(expect=401).json()["error"] == "totp_required"
+    # ... and so does this one once the 48 hours are over, however often it signed in.
+    with server.db.write() as conn:
+        conn.execute("UPDATE trusted_browsers SET expires_at = ?", (int(time.time()) - 1,))
+    assert AdminSession(browser).login(expect=401).json()["error"] == "totp_required"
+
+
+def test_trust_needs_the_password_and_a_cookie_the_server_issued(admin, client):
+    secret, step = _enable_totp(admin)
+    browser = TestClient(client.app)
+    AdminSession(browser).login(totp_code=totp_code(secret, step + 1))
+    AdminSession(browser, password="not the password").login(expect=401)
+    forged = TestClient(client.app)
+    forged.cookies.set("egorov-trust", "x" * 43)
+    assert AdminSession(forged).login(expect=401).json()["error"] == "totp_required"
+
+
+def test_enabling_totp_trusts_the_browser_that_did_it(admin, client):
+    _enable_totp(admin)
+    assert client.cookies.get("egorov-trust")
+    AdminSession(client).login()
+    account = admin.get("/api/v1/admin/overview").json()["account"]
+    assert account["trusted_browsers"] == 1 and account["trusted_until"] > time.time() + 47 * 3600
+
+
+def test_security_changes_make_every_browser_enter_a_code_again(admin, client):
+    secret, step = _enable_totp(admin)
+    other = TestClient(client.app)
+    AdminSession(other).login(totp_code=totp_code(secret, step + 1))
+    # Signing out other sessions also drops their trust, but keeps this browser's.
+    assert admin.post("/api/v1/admin/sessions/revoke-others").status_code == 200
+    assert AdminSession(other).login(expect=401).json()["error"] == "totp_required"
+    AdminSession(client).login()
+    # "Make every browser verify again" includes this one.
+    admin = AdminSession(client)
+    admin.login()
+    assert admin.post("/api/v1/admin/totp/forget").json()["forgotten"] == 1
+    assert AdminSession(TestClient(client.app, cookies=dict(client.cookies))).login(expect=401).json()["error"] == "totp_required"
+
+
+def test_password_change_forgets_trusted_browsers(admin, client, server):
+    _enable_totp(admin)
+    new_password = "a completely new passphrase"
+    kdf = crypto.new_kdf_params()
+    keys = crypto.derive_admin_keys(new_password, kdf)
+    response = admin.post("/api/v1/admin/password", {
+        "current_auth_key": admin.current(), "kdf": kdf, "auth_key": crypto.b64e(keys.auth_key),
+        "wrapped_vault_key": crypto.wrap_vault_key(keys.wrap_key, admin.vault_key)})
+    assert response.status_code == 200
+    with server.db.read() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM trusted_browsers").fetchone()[0] == 0
+
+
+def test_cli_resets_forget_trusted_browsers(admin, server):
+    from egorovsystem.server import vault as vault_module
+
+    _enable_totp(admin)
+    vault_module.revoke_sessions(server.db)
+    with server.db.read() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM trusted_browsers").fetchone()[0] == 0

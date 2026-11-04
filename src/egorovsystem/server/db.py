@@ -16,7 +16,17 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+
+# Browsers that passed two-factor sign-in recently (hashes of their cookie).
+TRUSTED_BROWSERS = """
+CREATE TABLE IF NOT EXISTS trusted_browsers (
+    id_hash     TEXT PRIMARY KEY,
+    created_at  INTEGER NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    ip          TEXT,
+    user_agent  TEXT
+)"""
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -93,6 +103,11 @@ def now() -> int:
     return int(time.time())
 
 
+def forget_trusted_browsers(conn: sqlite3.Connection, keep: Optional[str] = None) -> int:
+    """Make browsers enter a two-factor code again at their next sign-in."""
+    return conn.execute("DELETE FROM trusted_browsers WHERE id_hash IS NOT ?", (keep,)).rowcount
+
+
 class Database:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -148,6 +163,7 @@ class Database:
         Only ever adds columns and fills them in; it never drops or rewrites
         data, so devices and stored items keep working across upgrades."""
         with self.write() as conn:
+            conn.execute(TRUSTED_BROWSERS)  # added in schema 4
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
             if "position" not in columns:
                 conn.execute("ALTER TABLE items ADD COLUMN position REAL")

@@ -114,6 +114,18 @@ SameSite=Strict). Every non-GET call also needs `X-CSRF-Token`. Sign-in:
 4. The browser unwraps `V` and keeps it in memory only. After a reload it calls
    `GET /api/v1/admin/session` and asks for the password again to unlock.
 
+With two-factor sign-in on, a successful code also sets a second cookie,
+`__Host-egorov-trust` (same flags, 48 hours, stored as a SHA-256 hash). For
+those 48 hours, counted from that sign-in, the same browser signs in with the
+password alone. Changing the master password, turning two-factor sign-in on or
+off, the recovery reset and `egoserver-admin revoke-sessions` forget every
+trusted browser; signing out other sessions forgets all but the current one;
+`POST /api/v1/admin/totp/forget` forgets all of them.
+
+`GET /api/v1/admin/status` also returns `ui`, the fingerprint of the interface
+files (the `<hash>` in `/admin/assets/<hash>/`). An installed app that stays
+open across a release compares it with its own and reloads.
+
 Sensitive calls (`password`, `recovery`, `totp/*`, `rotate`) also require
 `current_auth_key`. The complete list of routes is at the bottom of
 `src/egorovsystem/server/api_admin.py`.

@@ -20,9 +20,9 @@ from .. import __version__, crypto
 from ..names import ITEM_KINDS, is_valid_kind, is_valid_name, normalize_refs, normalize_scopes
 from . import db as dbm
 from .auth import (
-    check_verifier, clear_session_cookie, create_session, decode_auth_key, error, fake_kdf,
-    load_session, make_verifier, new_totp_secret, require_admin, set_session_cookie, totp_uri,
-    verify_totp,
+    check_verifier, clear_session_cookie, clear_trust_cookie, create_session, decode_auth_key, error,
+    fake_kdf, load_session, make_verifier, new_totp_secret, remember_browser, require_admin,
+    set_session_cookie, set_trust_cookie, totp_uri, trusted_browser, trusted_until, verify_totp,
 )
 from .security import BodyTooLarge, client_ip, read_json
 
@@ -115,7 +115,9 @@ def _same_text(a: str, b: str) -> bool:
 async def status(request: Request) -> JSONResponse:
     initialized = request.app.state.db.is_initialized()
     session = load_session(request) if initialized else None
-    return JSONResponse({"initialized": initialized, "authenticated": session is not None, "version": __version__})
+    # `ui` lets an installed app that stayed open across a release notice it.
+    return JSONResponse({"initialized": initialized, "authenticated": session is not None, "version": __version__,
+                         "ui": request.app.state.assets.id})
 
 
 async def prelogin(request: Request) -> Response:
@@ -166,10 +168,16 @@ async def login(request: Request) -> Response:
             _audit(request, conn, "login", username, ok=False, actor="anonymous")
         return error(401, "invalid_credentials", "Wrong username or password.")
 
+    # A browser that passed two-factor sign-in recently only needs the password.
+    remembered = remember = False
     if admin["totp_enabled"]:
+        with db.read() as conn:
+            remembered = trusted_browser(conn, request) is not None
+    if admin["totp_enabled"] and not remembered:
         code = body.get("totp_code")
         if not code:
-            return error(401, "totp_required", "Enter the code from your authenticator app.")
+            return error(401, "totp_required", "Enter the code from your authenticator app.",
+                         remember_seconds=request.app.state.settings.totp_remember_seconds)
         step = verify_totp(admin["totp_secret"], code, admin["totp_last_step"])
         if step is None:
             _record_login_failure(request, ip, username)
@@ -181,14 +189,18 @@ async def login(request: Request) -> Response:
                 "UPDATE admin SET totp_last_step = ? WHERE id = 1 AND totp_last_step < ?", (step, step)).rowcount
         if not updated:
             return error(401, "invalid_totp", "The authenticator code is wrong or was already used.")
+        remember = True
 
     request.app.state.limiter.reset(f"login-user-ip:{username}:{ip}")
     with db.write() as conn:
         raw, session = create_session(conn, request)
-        _audit(request, conn, "login", username)
+        trust = remember_browser(conn, request) if remember else None
+        _audit(request, conn, "login", username, detail={"totp": "remembered"} if remembered else None)
         admin = dbm.get_admin(conn)
     response = JSONResponse(_session_payload(admin, session))
     set_session_cookie(response, request, raw)
+    if trust:
+        set_trust_cookie(response, request, trust)
     return response
 
 
@@ -224,6 +236,8 @@ async def overview(request: Request) -> Response:
         recent = conn.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 12").fetchall()
         admin = dbm.get_admin(conn)
         meta = {key: dbm.get_meta(conn, key) for key in ("initialized_at", "vault_rotated_at", "recovery_set_at")}
+        trusted = conn.execute("SELECT COUNT(*) FROM trusted_browsers WHERE expires_at > ?", (dbm.now(),)).fetchone()[0]
+        this_browser = trusted_until(conn, request)
     return JSONResponse({
         "counts": {"variables": counts["variable"], "functions": counts["function"],
                    "devices": devices["total"], "devices_enabled": devices["enabled"]},
@@ -231,7 +245,9 @@ async def overview(request: Request) -> Response:
         "failures_24h": failures_24h,
         "recent": [_audit_row(row) for row in recent],
         "account": {"username": admin["username"], "totp_enabled": bool(admin["totp_enabled"]),
-                    "password_changed_at": admin["password_changed_at"]},
+                    "password_changed_at": admin["password_changed_at"],
+                    "totp_remember_seconds": request.app.state.settings.totp_remember_seconds,
+                    "trusted_browsers": trusted, "trusted_until": this_browser},
         "vault": {key: int(value) if value else None for key, value in meta.items()},
         "version": __version__,
     })
@@ -554,8 +570,11 @@ async def change_password(request: Request) -> Response:
             "password_changed_at = ? WHERE id = 1",
             (json.dumps(kdf), salt, verifier, body["wrapped_vault_key"], dbm.now()))
         conn.execute("DELETE FROM sessions WHERE id_hash != ?", (request.state.session.id_hash,))
+        dbm.forget_trusted_browsers(conn)
         _audit(request, conn, "admin.password")
-    return JSONResponse({"ok": True})
+    response = JSONResponse({"ok": True})
+    clear_trust_cookie(response, request)
+    return response
 
 
 @require_admin
@@ -613,8 +632,12 @@ async def totp_enable(request: Request) -> Response:
         if step is None:
             return error(400, "invalid_totp", "The code is wrong. Check the clock on your phone.")
         conn.execute("UPDATE admin SET totp_enabled = 1, totp_last_step = ? WHERE id = 1", (step,))
+        dbm.forget_trusted_browsers(conn)
+        trust = remember_browser(conn, request)
         _audit(request, conn, "admin.totp.enable")
-    return JSONResponse({"ok": True})
+    response = JSONResponse({"ok": True})
+    set_trust_cookie(response, request, trust)
+    return response
 
 
 @require_admin
@@ -633,8 +656,11 @@ async def totp_disable(request: Request) -> Response:
         if step is None:
             return error(400, "invalid_totp", "The authenticator code is wrong.")
         conn.execute("UPDATE admin SET totp_enabled = 0, totp_secret = NULL, totp_last_step = ? WHERE id = 1", (step,))
+        dbm.forget_trusted_browsers(conn)
         _audit(request, conn, "admin.totp.disable")
-    return JSONResponse({"ok": True})
+    response = JSONResponse({"ok": True})
+    clear_trust_cookie(response, request)
+    return response
 
 
 @require_admin
@@ -669,10 +695,23 @@ async def delete_session(request: Request) -> Response:
 
 @require_admin
 async def revoke_other_sessions(request: Request) -> Response:
+    """Sign out every other browser; they also have to enter a code again."""
     with request.app.state.db.write() as conn:
         count = conn.execute("DELETE FROM sessions WHERE id_hash != ?", (request.state.session.id_hash,)).rowcount
+        dbm.forget_trusted_browsers(conn, keep=trusted_browser(conn, request))
         _audit(request, conn, "session.revoke_others", detail={"count": count})
     return JSONResponse({"ok": True, "revoked": count})
+
+
+@require_admin
+async def forget_browsers(request: Request) -> Response:
+    """Every browser, this one included, enters a code at its next sign-in."""
+    with request.app.state.db.write() as conn:
+        count = dbm.forget_trusted_browsers(conn)
+        _audit(request, conn, "admin.totp.forget", detail={"count": count})
+    response = JSONResponse({"ok": True, "forgotten": count})
+    clear_trust_cookie(response, request)
+    return response
 
 
 @require_admin
@@ -738,6 +777,7 @@ routes = [
     Route("/api/v1/admin/totp/setup", totp_setup, methods=["POST"]),
     Route("/api/v1/admin/totp/enable", totp_enable, methods=["POST"]),
     Route("/api/v1/admin/totp/disable", totp_disable, methods=["POST"]),
+    Route("/api/v1/admin/totp/forget", forget_browsers, methods=["POST"]),
     Route("/api/v1/admin/sessions", list_sessions, methods=["GET"]),
     Route("/api/v1/admin/sessions/revoke-others", revoke_other_sessions, methods=["POST"]),
     Route("/api/v1/admin/sessions/{sid}", delete_session, methods=["DELETE"]),

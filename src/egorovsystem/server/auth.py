@@ -166,6 +166,56 @@ def clear_session_cookie(response: Response, request: Request) -> None:
                            httponly=True, samesite="strict")
 
 
+# ---------------------------------------------------------------- trusted browsers
+#
+# A browser that passed two-factor sign-in gets a second cookie. For
+# settings.totp_remember_seconds after that, signing in from it needs only the
+# master password. Only the cookie's hash is stored, like session ids.
+
+def trusted_browser(conn: sqlite3.Connection, request: Request) -> Optional[str]:
+    """The stored hash for this browser if it is still trusted, else None."""
+    raw = request.cookies.get(request.app.state.settings.trust_cookie_name)
+    if not raw or len(raw) > 100:
+        return None
+    id_hash = _hash_session(raw)
+    row = conn.execute("SELECT expires_at FROM trusted_browsers WHERE id_hash = ?", (id_hash,)).fetchone()
+    return id_hash if row is not None and row["expires_at"] > dbm.now() else None
+
+
+def trusted_until(conn: sqlite3.Connection, request: Request) -> Optional[int]:
+    id_hash = trusted_browser(conn, request)
+    if id_hash is None:
+        return None
+    return conn.execute("SELECT expires_at FROM trusted_browsers WHERE id_hash = ?", (id_hash,)).fetchone()[0]
+
+
+def remember_browser(conn: sqlite3.Connection, request: Request) -> str:
+    """Trust this browser from now on; returns the cookie value to set."""
+    settings = request.app.state.settings
+    raw = secrets.token_urlsafe(32)
+    now = dbm.now()
+    conn.execute("DELETE FROM trusted_browsers WHERE expires_at <= ?", (now,))
+    conn.execute(
+        "INSERT INTO trusted_browsers (id_hash, created_at, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?)",
+        (_hash_session(raw), now, now + settings.totp_remember_seconds, client_ip(request),
+         (request.headers.get("user-agent") or "")[:300]))
+    return raw
+
+
+def set_trust_cookie(response: Response, request: Request, raw: str) -> None:
+    settings = request.app.state.settings
+    response.set_cookie(
+        settings.trust_cookie_name, raw, max_age=settings.totp_remember_seconds, path="/",
+        secure=settings.secure_cookies, httponly=True, samesite="strict",
+    )
+
+
+def clear_trust_cookie(response: Response, request: Request) -> None:
+    settings = request.app.state.settings
+    response.delete_cookie(settings.trust_cookie_name, path="/", secure=settings.secure_cookies,
+                           httponly=True, samesite="strict")
+
+
 Handler = Callable[..., Awaitable[Response]]
 
 

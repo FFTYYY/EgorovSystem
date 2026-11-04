@@ -3,7 +3,7 @@
 
 import * as c from "../crypto.js";
 import { api } from "../api.js";
-import { ago, busy, clear, copyText, field, formatDate, formError, h, icon, modal, timeTag, toast } from "../dom.js";
+import { ago, busy, clear, copyText, field, formatDate, formatTime, formError, h, icon, modal, timeTag, toast } from "../dom.js";
 import { isMobile } from "../layout.js";
 import * as m from "../mobile.js";
 import { install, installMode } from "../pwa.js";
@@ -265,6 +265,23 @@ function rotateVault(ctx, onDone) {
   });
 }
 
+function totpText(account) {
+  if (!account.totp_enabled) return ["未开启。开启后，即使主密码泄露，别人也无法登录后台。"];
+  const hours = Math.round(account.totp_remember_seconds / 3600);
+  return [`已开启。浏览器输入过一次验证码后，${hours} 小时内登录只需要主密码。`,
+    account.trusted_until ? `这个浏览器在 ${formatTime(account.trusted_until)} 之前登录不需要验证码。` : null].filter(Boolean);
+}
+
+async function forgetBrowsers(onDone) {
+  try {
+    await api("POST", "/totp/forget");
+    toast("所有浏览器下次登录都需要验证码。");
+    onDone();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
 function describeAgent(ua) {
   if (!ua) return "未知浏览器";
   const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome"
@@ -316,10 +333,12 @@ export async function renderSettings(page, ctx) {
     settingBlock("主密码",
       [`登录后台并解锁保险库都靠它。上次修改于 ${formatDate(account.password_changed_at)}。`],
       h("button", { class: "button", type: "button", onclick: () => changePassword(rerender) }, "修改主密码")),
-    settingBlock("两步验证",
-      [account.totp_enabled ? "已开启。登录时需要身份验证器上的验证码。" : "未开启。开启后，即使主密码泄露，别人也无法登录后台。"],
+    settingBlock("两步验证", totpText(account),
       account.totp_enabled
-        ? h("button", { class: "button", type: "button", onclick: () => disableTotp(rerender) }, "关闭两步验证")
+        ? h("div", { class: "setting-buttons" },
+          h("button", { class: "button", type: "button", onclick: () => disableTotp(rerender) }, "关闭两步验证"),
+          account.trusted_browsers ? h("button", { class: "button", type: "button", onclick: () => forgetBrowsers(rerender) },
+            "让所有浏览器重新验证") : null)
         : h("button", { class: "button button-primary", type: "button", onclick: () => enableTotp(rerender) }, "开启两步验证")),
     settingBlock("恢复密钥",
       [`忘记主密码时，用它在服务器上重置。当前的恢复密钥生成于 ${formatDate(overview.vault.recovery_set_at)}。`],

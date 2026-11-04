@@ -36,6 +36,9 @@ class Settings:
     secure_cookies: bool = True
     session_idle_seconds: int = 30 * 60
     session_max_seconds: int = 12 * 60 * 60
+    # After a browser passes two-factor sign-in, it only needs the master
+    # password for this long (counted from that sign-in, not extended by use).
+    totp_remember_seconds: int = 48 * 60 * 60
     audit_retention_days: int = 365
     max_body_bytes: int = 2 * 1024 * 1024
 
@@ -46,3 +49,7 @@ class Settings:
     @property
     def cookie_name(self) -> str:
         return "__Host-egorov" if self.secure_cookies else "egorov"
+
+    @property
+    def trust_cookie_name(self) -> str:
+        return "__Host-egorov-trust" if self.secure_cookies else "egorov-trust"

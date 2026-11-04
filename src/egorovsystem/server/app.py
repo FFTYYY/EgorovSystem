@@ -24,7 +24,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Do not trust the platform's MIME registry (Windows sometimes maps .js to
 # text/plain, which breaks module scripts under X-Content-Type-Options).
 for _type, _ext in (("text/javascript", ".js"), ("text/css", ".css"), ("font/woff2", ".woff2"),
-                    ("image/svg+xml", ".svg"), ("text/plain", ".txt"), ("image/png", ".png"),
+                    ("image/svg+xml", ".svg"), ("text/plain", ".txt"), ("image/png", ".png"), ("image/webp", ".webp"),
                     ("application/manifest+json", ".webmanifest")):
     mimetypes.add_type(_type, _ext)
 

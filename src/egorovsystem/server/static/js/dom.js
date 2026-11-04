@@ -83,20 +83,15 @@ export function icon(name, label) {
   return svg;
 }
 
-// The wax seal on the bookplate: a scalloped disc with the monogram.
-export function seal(size = 84) {
-  const points = [];
-  const lobes = 18;
-  for (let i = 0; i <= lobes * 8; i++) {
-    const angle = (i / (lobes * 8)) * Math.PI * 2;
-    const r = 40 + 2.2 * Math.cos(angle * lobes) + 0.8 * Math.sin(angle * 7);
-    points.push(`${(50 + r * Math.cos(angle)).toFixed(2)},${(50 + r * Math.sin(angle)).toFixed(2)}`);
-  }
-  return s("svg", { viewBox: "0 0 100 100", width: size, height: size, class: "seal", "aria-hidden": "true" },
-    s("polygon", { points: points.join(" "), class: "seal-wax" }),
-    s("circle", { cx: 50, cy: 50, r: 31, class: "seal-ring" }),
-    s("circle", { cx: 50, cy: 50, r: 27.5, class: "seal-ring thin" }),
-    s("text", { x: 50, y: 50, class: "seal-letter", "text-anchor": "middle", "dominant-baseline": "central" }, "E"));
+// The app's mark: the keeper's head. The URLs resolve next to this module,
+// so they follow the fingerprinted asset directory it was loaded from.
+const MASCOT_SMALL = new URL("../icons/mascot-96.webp", import.meta.url).href;
+const MASCOT_LARGE = new URL("../icons/mascot-320.webp", import.meta.url).href;
+
+export function mascot(size = 96) {
+  return h("img", { class: "mascot", src: size > 48 ? MASCOT_LARGE : MASCOT_SMALL,
+    srcset: `${MASCOT_SMALL} 96w, ${MASCOT_LARGE} 320w`, sizes: `${size}px`,
+    width: size, height: size, alt: "", decoding: "async", draggable: "false" });
 }
 
 // ------------------------------------------------------------ hover tips

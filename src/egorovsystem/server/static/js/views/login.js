@@ -2,14 +2,14 @@
 
 import * as c from "../crypto.js";
 import { api, ApiError } from "../api.js";
-import { busy, clear, field, formError, h, seal } from "../dom.js";
+import { busy, clear, field, formError, h, mascot } from "../dom.js";
 import { applySession, session, unlock } from "../state.js";
 
 function plate(...content) {
   return h("div", { class: "plate-stage" },
     h("section", { class: "plate" },
       h("div", { class: "plate-inner" },
-        seal(88),
+        mascot(128),
         h("h1", { class: "plate-title" }, "Egorov"),
         h("p", { class: "plate-motto", lang: "la" }, "Clavis in manu tua"),
         ...content)));
@@ -24,6 +24,7 @@ export function renderLogin(root, { message, onDone }) {
   const totp = h("input", { type: "text", name: "totp", inputmode: "numeric", autocomplete: "one-time-code",
     pattern: "[0-9 ]{6,7}", maxlength: "7" });
   const totpField = field("验证码", totp, "打开身份验证器，输入当前显示的 6 位数字。");
+  const totpHint = totpField.querySelector(".field-hint");
   totpField.hidden = true;
   const error = formError();
   if (message) error.show(message);
@@ -61,6 +62,8 @@ export function renderLogin(root, { message, onDone }) {
         await onDone();
       } catch (err) {
         if (err instanceof ApiError && err.code === "totp_required") {
+          const hours = err.data && err.data.remember_seconds ? Math.round(err.data.remember_seconds / 3600) : 0;
+          if (hours) totpHint.textContent = `输入身份验证器上的 6 位数字。之后 ${hours} 小时内，这个浏览器登录不用再输。`;
           totpField.hidden = false;
           totp.focus();
           return;

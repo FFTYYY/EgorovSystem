@@ -27,6 +27,7 @@ const ACTIONS = {
   "admin.recovery": "生成新的恢复密钥",
   "admin.totp.enable": "开启两步验证",
   "admin.totp.disable": "关闭两步验证",
+  "admin.totp.forget": "让浏览器重新验证",
   "session.revoke": "让会话下线",
   "session.revoke_others": "让其他会话下线",
   "session.revoke_all": "让所有会话下线",

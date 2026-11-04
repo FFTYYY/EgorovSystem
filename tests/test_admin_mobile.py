@@ -123,3 +123,40 @@ def test_desktop_keeps_the_sidebar(live_server, browser):
     page.wait_for_selector("table.catalog tbody tr")
     assert errors == []
     context.close()
+
+
+NEWER = {"initialized": True, "authenticated": False, "version": "9.9.9", "ui": "ffffffffffff"}
+
+
+def _pretend_newer_release(page):
+    page.route("**/api/v1/admin/status", lambda route: route.fulfill(json=NEWER))
+
+
+def test_a_newer_interface_reloads_a_locked_app_once(live_server, browser):
+    context = browser.new_context(**PHONE)
+    page = context.new_page()
+    page.goto(live_server)
+    page.wait_for_selector("input[name=username]")
+    _pretend_newer_release(page)
+    with page.expect_navigation():
+        page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    page.wait_for_selector("input[name=username]")
+    # Still told about the same release (old files keep coming back): no loop, a button instead.
+    page.evaluate("window.notReloaded = true; document.dispatchEvent(new Event('visibilitychange'))")
+    page.wait_for_selector(".update-bar")
+    assert page.evaluate("window.notReloaded") is True
+    context.close()
+
+
+def test_a_newer_interface_waits_while_the_vault_is_in_use(live_server, browser):
+    context = browser.new_context(**PHONE)
+    page, errors = _sign_in(context, live_server)
+    _pretend_newer_release(page)
+    page.evaluate("window.notReloaded = true; window.dispatchEvent(new Event('online'))")
+    page.wait_for_selector(".update-bar")
+    assert page.evaluate("window.notReloaded") is True
+    page.unroute("**/api/v1/admin/status")
+    with page.expect_navigation():
+        page.locator(".update-bar button").click()
+    assert errors == []
+    context.close()

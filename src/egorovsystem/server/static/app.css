@@ -1,5 +1,5 @@
-/* Egorov admin. A private archive after dark: reading-room green, aged paper,
-   brass fittings, an oxblood seal. One theme on purpose. */
+/* Egorov admin. A private archive after dark: a slate-blue reading room, aged
+   paper, brass fittings, oxblood accents. One theme on purpose. */
 
 @font-face { font-family: "EB Garamond"; src: url("fonts/eb-garamond.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
 @font-face { font-family: "EB Garamond"; src: url("fonts/eb-garamond-italic.woff2") format("woff2"); font-weight: 400 700; font-style: italic; font-display: swap; }
@@ -9,12 +9,12 @@
 
 :root {
   color-scheme: dark;
-  --ground: #111512;
-  --panel: #171c18;
-  --raised: #1e241f;
-  --field: #0d110e;
-  --line: #2b342c;
-  --line-strong: #3c473d;
+  --ground: #11151b;
+  --panel: #171b23;
+  --raised: #1e232d;
+  --field: #0c0f14;
+  --line: #2a313d;
+  --line-strong: #3c4553;
   --paper: #e7ddc7;
   --paper-dim: #b3aa95;
   --faint: #827d6e;
@@ -62,12 +62,12 @@ body::before {
 ::selection { background: rgba(201, 165, 92, 0.35); color: var(--paper); }
 
 /* Scrollbars: a slim rule in the page's own colors instead of the platform default. */
-* { scrollbar-width: thin; scrollbar-color: #4a554b transparent; }
+* { scrollbar-width: thin; scrollbar-color: #4a5463 transparent; }
 textarea:hover, .table-wrap:hover, .modal-body:hover, .code-block:hover { scrollbar-color: var(--brass-deep) transparent; }
 @supports not (scrollbar-color: auto) {
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #4a554b; border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb { background: #4a5463; border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
   ::-webkit-scrollbar-thumb:hover { background: var(--brass-deep); background-clip: padding-box; }
 }
 a { color: var(--brass-bright); text-underline-offset: 3px; text-decoration-thickness: 1px; }
@@ -204,14 +204,10 @@ input[type="checkbox"] { accent-color: var(--brass); width: 17px; height: 17px; 
   border: 1px solid rgba(201, 165, 92, 0.35);
   text-align: center;
 }
-.seal { filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.55)); overflow: visible; }
-.plate .seal { animation: press 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.15) both; transform-origin: 50% 50%; }
-@keyframes press { from { transform: scale(1.18) rotate(-8deg); } to { transform: none; } }
-.seal-wax { fill: var(--oxblood); }
-.seal-ring { fill: none; stroke: var(--oxblood-deep); stroke-width: 1.5; }
-.seal-ring.thin { stroke-width: 0.7; }
-.seal-letter { fill: var(--brass-bright); font-family: "IM Fell English", Georgia, serif; font-size: 40px; }
-.plate-title { margin: 14px 0 0; font-family: var(--display); font-weight: 400; font-size: 54px; line-height: 1; letter-spacing: 0.01em; }
+.mascot { display: block; flex: none; object-fit: contain; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.5)); -webkit-user-select: none; user-select: none; }
+.plate .mascot { animation: arrive 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+@keyframes arrive { from { transform: translateY(8px) scale(0.86); opacity: 0; } to { transform: none; opacity: 1; } }
+.plate-title { margin: 10px 0 0; font-family: var(--display); font-weight: 400; font-size: 54px; line-height: 1; letter-spacing: 0.01em; }
 .plate-motto { margin: 8px 0 30px; font-family: "EB Garamond", Georgia, serif; font-style: italic; font-size: 17px; letter-spacing: 0.04em; color: var(--brass); }
 .plate-form { width: 100%; display: flex; flex-direction: column; gap: 16px; text-align: left; }
 .plate-form > p { margin: 0; }
@@ -231,7 +227,7 @@ input[type="checkbox"] { accent-color: var(--brass); width: 17px; height: 17px; 
   gap: 30px;
   padding: 28px 18px 22px;
   border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, var(--panel), rgba(23, 28, 24, 0.4));
+  background: linear-gradient(180deg, var(--panel), rgba(23, 27, 35, 0.4));
 }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; color: var(--paper); text-decoration: none; }
 .brand-name { font-family: var(--display); font-size: 29px; line-height: 1; }
@@ -353,6 +349,7 @@ td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .setting h2 { margin: 0 0 6px; font-family: var(--display); font-weight: 400; font-size: 25px; }
 .setting-text p { margin: 0 0 4px; max-width: 38em; color: var(--paper-dim); }
 .setting-action { align-self: start; padding-top: 4px; }
+.setting-buttons { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .setting-table { grid-column: 1 / -1; }
 .setting-about { border-bottom: 0; }
 
@@ -369,7 +366,7 @@ dialog.modal {
   box-shadow: 0 40px 110px rgba(0, 0, 0, 0.65);
 }
 dialog.modal-wide { width: min(780px, calc(100vw - 32px)); }
-dialog::backdrop { background: rgba(6, 8, 7, 0.74); backdrop-filter: blur(2px); }
+dialog::backdrop { background: rgba(6, 8, 11, 0.74); backdrop-filter: blur(2px); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 3px double var(--line-strong); }
 .modal-head h2 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 28px; line-height: 1.15; }
 .modal-body { display: flex; flex-direction: column; gap: 16px; padding: 20px 22px 22px; max-height: calc(100vh - 150px); overflow-y: auto; }
@@ -437,6 +434,10 @@ li.drop-after { box-shadow: inset 0 -2px 0 var(--brass); }
 .toasts { position: fixed; inset: auto 24px 24px auto; width: auto; height: auto; margin: 0; padding: 0; border: 0; overflow: visible; background: transparent; color: inherit; align-items: flex-end; z-index: 1000; display: flex; flex-direction: column; gap: 8px; max-width: calc(100vw - 48px); }
 .toast { padding: 10px 16px; border: 1px solid var(--line-strong); border-left: 3px solid var(--brass); background: var(--raised); color: var(--paper); font-size: 15px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45); transition: opacity 0.4s, transform 0.4s; }
 .toast-error { border-left-color: var(--oxblood); }
+
+/* a newer interface is on the server (update.js) */
+.update-bar { position: fixed; z-index: 900; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 7px 7px 7px 16px; border: 1px solid var(--brass-deep); border-radius: var(--radius); background: var(--raised); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); font-size: 15px; white-space: nowrap; }
+.update-bar .button { padding: 6px 12px; font-size: 15px; }
 .toast.leaving { opacity: 0; transform: translateY(6px); }
 
 /* ------------------------------------------------------------ narrow screens */
@@ -445,7 +446,7 @@ li.drop-after { box-shadow: inset 0 -2px 0 var(--brass); }
   .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar { position: sticky; z-index: 10; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--line); background: var(--panel); }
   .brand-name { font-size: 24px; }
-  .brand .seal { width: 28px; height: 28px; }
+  .brand .mascot { width: 34px; height: 34px; }
   .toc { order: 3; flex: 1 0 100%; flex-direction: row; gap: 2px; overflow-x: auto; }
   .toc-item { font-size: 16px; padding: 6px 10px; white-space: nowrap; }
   .toc-leader { display: none; }
