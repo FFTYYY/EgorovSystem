@@ -17,7 +17,8 @@ const CACHE = `egorov-${ASSETS.replace(/[^A-Za-z0-9]+/g, "-")}`;
 const FILES = [
   "static/app.css",
   "static/mobile.css",
-  "static/favicon.svg",
+  "static/icons/favicon-32.png",
+  "static/icons/favicon-64.png",
   "static/manifest.webmanifest",
   "static/fonts/eb-garamond.woff2",
   "static/fonts/eb-garamond-italic.woff2",

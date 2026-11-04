@@ -23,7 +23,7 @@ def test_admin_page_and_assets_are_served(client):
     # so the zone-wide Rocket Loader setting does not matter.
     assert f'<script type="module" data-cfasync="false" src="{base}js/main.js"></script>' in page.text
     assert '="static/' not in page.text
-    for path in ("app.css", "js/main.js", "js/crypto.js", "fonts/eb-garamond.woff2", "favicon.svg"):
+    for path in ("app.css", "js/main.js", "js/crypto.js", "fonts/eb-garamond.woff2", "icons/favicon-32.png"):
         response = client.get(f"/admin/{base}{path}")
         assert response.status_code == 200, path
         assert response.headers["cache-control"] == "public, max-age=31536000, immutable", path
@@ -107,7 +107,8 @@ def test_service_worker_stores_every_interface_file_and_nothing_else():
     files = source[source.index("const FILES = ["):]
     listed = set(re.findall(r'^\s+"([^"]+)",$', files[:files.index("];")], re.M))
     on_disk = {f"static/{p.relative_to(STATIC).as_posix()}" for p in STATIC.rglob("*")
-               if p.suffix in {".js", ".css", ".woff2", ".webmanifest", ".svg"} and p.name != "sw.js"}
+               if (p.suffix in {".js", ".css", ".woff2", ".webmanifest", ".svg"} or p.name.startswith("favicon-"))
+               and p.name != "sw.js"}
     assert listed == on_disk
     # The API is never answered from the cache.
     assert "startsWith(scope.pathname)" in source
