@@ -1,31 +1,10 @@
 // Variables: the catalogue of secrets and settings.
 
-import { busy, clear, confirmAction, copyText, field, formError, h, hoverTip, icon, modal, timeTag, toast } from "../dom.js";
-import { deleteItem, functionsUsing, itemsOf, NAME_RE, reorder, saveItem } from "../state.js";
-import { dragHandle, focusHandle, makeSortable } from "../sortable.js";
-
-let slashHandler = null;
-
-export function bindSearchShortcut(input) {
-  if (slashHandler) document.removeEventListener("keydown", slashHandler);
-  slashHandler = (event) => {
-    if (!input.isConnected) return;
-    const tag = document.activeElement && document.activeElement.tagName;
-    if (event.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(tag) && !document.querySelector("dialog[open]")) {
-      event.preventDefault();
-      input.focus();
-    }
-  };
-  document.addEventListener("keydown", slashHandler);
-}
-
-export function searchBox(placeholder, onInput) {
-  const input = h("input", { type: "search", class: "search-input", placeholder, "aria-label": placeholder,
-    spellcheck: "false", autocomplete: "off" });
-  input.addEventListener("input", () => onInput(input.value.trim().toLowerCase()));
-  bindSearchShortcut(input);
-  return { input, node: h("label", { class: "search" }, icon("search"), input, h("kbd", { title: "按 / 搜索" }, "/")) };
-}
+import { ago, busy, clear, confirmAction, copyText, field, formatTime, formError, h, hoverTip, icon, modal, timeTag, toast } from "../dom.js";
+import * as m from "../mobile.js";
+import { dragHandle } from "../sortable.js";
+import { deleteItem, functionsUsing, NAME_RE, saveItem } from "../state.js";
+import { renderCatalog } from "./catalog.js";
 
 function nameInput(value) {
   return h("input", { type: "text", class: "mono", value, required: true, spellcheck: "false", autocomplete: "off",
@@ -121,80 +100,122 @@ function usedBy(name) {
   return trigger;
 }
 
-export async function renderVariables(page, ctx) {
-  let filter = "";
-  const tbody = h("tbody");
-  const count = h("span", { class: "toolbar-count" });
-  const empty = h("div", { class: "empty" });
-  const table = h("div", { class: "table-wrap" },
+async function removeVariable(item, changed) {
+  const users = functionsUsing(item.name);
+  const ok = await confirmAction({
+    title: `删除变量 ${item.name}？`,
+    message: [
+      "读取它的程序会报“找不到”。这一步无法撤销。",
+      users.length ? `这些函数引用了它：${users.map((f) => f.name).join("、")}。` : null,
+    ].filter(Boolean),
+    confirmLabel: "删除变量",
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await deleteItem("variable", item.name);
+    toast(`已删除 ${item.name}`);
+    changed();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+// ------------------------------------------------------------ desktop table
+
+function table() {
+  const body = h("tbody");
+  const node = h("div", { class: "table-wrap" },
     h("table", { class: "catalog" },
       h("thead", null, h("tr", null, h("th", { class: "cell-handle" }, h("span", { class: "visually-hidden" }, "顺序")),
         h("th", null, "名字"), h("th", null, "值"), h("th", null, "备注"),
         h("th", null, "修改于"), h("th", null, h("span", { class: "visually-hidden" }, "操作")))),
-      tbody));
+      body));
+  return { node, body };
+}
 
-  makeSortable(tbody, "tr", (names, moved) => {
-    reorder("variable", names).catch((err) => { toast(err.message, "error"); draw(); });
-    draw();
-    focusHandle(tbody, moved);
+function tableRow(item, { sortable, changed }) {
+  return h("tr", { dataset: { key: item.name } },
+    h("td", { class: "cell-handle" }, dragHandle(item.name, sortable)),
+    h("td", { class: "cell-name" }, h("code", null, item.name), usedBy(item.name)),
+    valueCell(item),
+    h("td", { class: "cell-note" }, item.payload ? item.payload.note : item.error),
+    h("td", { class: "cell-time" }, timeTag(item.updated_at)),
+    h("td", { class: "cell-actions" },
+      h("button", { class: "icon-button", type: "button", title: "编辑", "aria-label": `编辑 ${item.name}`,
+        disabled: !item.payload, onclick: () => editVariable(item, changed) }, icon("edit")),
+      h("button", { class: "icon-button danger", type: "button", title: "删除", "aria-label": `删除 ${item.name}`,
+        onclick: () => removeVariable(item, changed) }, icon("trash"))));
+}
+
+// ------------------------------------------------------------ phone list
+
+// The value, hidden until asked for, with show and copy buttons below it.
+function secretBox(value, name) {
+  const text = h("code", { class: "m-secret-text" }, value);
+  const mask = h("span", { class: "mask", "aria-label": "已隐藏" }, "••••••••••••");
+  text.hidden = true;
+  const toggle = h("button", { class: "button button-quiet", type: "button" });
+  const show = (visible) => {
+    text.hidden = !visible;
+    mask.hidden = visible;
+    clear(toggle).append(icon(visible ? "eyeOff" : "eye"), visible ? "隐藏" : "显示");
+  };
+  toggle.addEventListener("click", () => show(text.hidden));
+  show(false);
+  return [h("div", { class: "m-secret" }, mask, text),
+    h("div", { class: "m-secret-tools" }, toggle,
+      h("button", { class: "button button-quiet", type: "button", onclick: () => copyText(value, `变量 ${name} 的值`) },
+        icon("copy"), "复制"))];
+}
+
+function showVariable(item, changed) {
+  const p = item.payload;
+  const users = functionsUsing(item.name);
+  return m.detailSheet({
+    title: item.name,
+    heading: h("code", { class: "m-sheet-name" }, item.name),
+    build: (close) => [
+      m.detail("值", p ? secretBox(p.value, item.name) : h("span", { class: "cell-error" }, `无法解密：${item.error}`)),
+      p && p.note ? m.detail("备注", p.note) : null,
+      users.length ? m.detail("被这些函数引用", users.map((f) => h("code", { class: "ref" }, f.name))) : null,
+      m.detail("修改于", `${formatTime(item.updated_at)}（${ago(item.updated_at)}）`),
+      m.actions(
+        m.sheetButton(close, { label: "编辑", iconName: "edit", disabled: !p, action: () => editVariable(item, changed) }),
+        m.sheetButton(close, { label: "删除", iconName: "trash", kind: "danger", action: () => removeVariable(item, changed) })),
+    ],
   });
+}
 
-  function draw() {
-    const all = itemsOf("variable");
-    const rows = all.filter((item) => !filter || item.name.toLowerCase().includes(filter)
-      || (item.payload && item.payload.note.toLowerCase().includes(filter)));
-    clear(tbody);
-    for (const item of rows) {
-      tbody.append(h("tr", { dataset: { key: item.name } },
-        h("td", { class: "cell-handle" }, dragHandle(item.name, !filter)),
-        h("td", { class: "cell-name" }, h("code", null, item.name), usedBy(item.name)),
-        valueCell(item),
-        h("td", { class: "cell-note" }, item.payload ? item.payload.note : item.error),
-        h("td", { class: "cell-time" }, timeTag(item.updated_at)),
-        h("td", { class: "cell-actions" },
-          h("button", { class: "icon-button", type: "button", title: "编辑", "aria-label": `编辑 ${item.name}`,
-            disabled: !item.payload, onclick: () => editVariable(item, () => { draw(); ctx.refreshNav(); }) }, icon("edit")),
-          h("button", { class: "icon-button danger", type: "button", title: "删除", "aria-label": `删除 ${item.name}`,
-            onclick: () => remove(item) }, icon("trash")))));
-    }
-    count.textContent = filter ? `${rows.length} / ${all.length} 个` : `${all.length} 个`;
-    table.hidden = rows.length === 0;
-    empty.hidden = rows.length !== 0;
-    clear(empty).append(all.length
-      ? h("p", null, "没有匹配的变量。")
-      : h("p", null, "还没有变量。新建一个，或者在服务器上运行 ", h("code", null, "egoserver-admin import-legacy"), " 导入旧数据。"));
-  }
+function listRow(item, { changed }) {
+  const p = item.payload;
+  const users = functionsUsing(item.name).length;
+  return m.row({
+    key: item.name,
+    label: `查看 ${item.name}`,
+    head: h("code", { class: "m-row-title" }, item.name),
+    lines: [
+      p ? m.sub(p.note) : m.sub("无法解密", "cell-error"),
+      m.meta(`修改于 ${ago(item.updated_at)}`, users ? `被 ${users} 个函数引用` : null),
+    ],
+    quick: p ? h("button", { class: "icon-button", type: "button", title: "复制值", "aria-label": `复制 ${item.name} 的值`,
+      onclick: () => copyText(p.value, `变量 ${item.name} 的值`) }, icon("copy")) : null,
+    onOpen: () => showVariable(item, changed),
+  });
+}
 
-  async function remove(item) {
-    const users = functionsUsing(item.name);
-    const ok = await confirmAction({
-      title: `删除变量 ${item.name}？`,
-      message: [
-        "读取它的程序会报“找不到”。这一步无法撤销。",
-        users.length ? `这些函数引用了它：${users.map((f) => f.name).join("、")}。` : null,
-      ].filter(Boolean),
-      confirmLabel: "删除变量",
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      await deleteItem("variable", item.name);
-      toast(`已删除 ${item.name}`);
-      draw();
-      ctx.refreshNav();
-    } catch (err) {
-      toast(err.message, "error");
-    }
-  }
-
-  const search = searchBox("按名字或备注筛选", (value) => { filter = value; draw(); });
-  page.append(
-    h("header", { class: "page-head" },
-      h("div", null, h("h1", null, "变量"),
-        h("p", { class: "page-lead" }, "键值对，比如 API 密钥。值在这个浏览器里加密后才会上传，服务器只保存密文。")),
-      h("button", { class: "button button-primary", type: "button",
-        onclick: () => editVariable(null, () => { draw(); ctx.refreshNav(); }) }, icon("plus"), "新建变量")),
-    h("div", { class: "toolbar" }, search.node, count),
-    table, empty);
-  draw();
+export async function renderVariables(page, ctx) {
+  renderCatalog(page, ctx, {
+    kind: "variable",
+    title: "变量",
+    lead: "键值对，比如 API 密钥。值在这个浏览器里加密后才会上传，服务器只保存密文。",
+    newLabel: "新建变量",
+    placeholder: "按名字或备注筛选",
+    noMatch: "没有匹配的变量。",
+    matches: (item, q) => item.name.toLowerCase().includes(q) || Boolean(item.payload && item.payload.note.toLowerCase().includes(q)),
+    create: (changed) => editVariable(null, changed),
+    emptyState: () => h("p", null, "还没有变量。新建一个，或者在服务器上运行 ", h("code", null, "egoserver-admin import-legacy"), " 导入旧数据。"),
+    desktop: { container: table, selector: "tr", row: tableRow },
+    phone: { row: listRow },
+  });
 }

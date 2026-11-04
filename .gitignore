@@ -17,4 +17,6 @@ dist/
 # Local workspace
 reports
 tmp
+memo
+instructions
 node_modules/

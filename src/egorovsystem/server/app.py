@@ -23,7 +23,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Do not trust the platform's MIME registry (Windows sometimes maps .js to
 # text/plain, which breaks module scripts under X-Content-Type-Options).
 for _type, _ext in (("text/javascript", ".js"), ("text/css", ".css"), ("font/woff2", ".woff2"),
-                    ("image/svg+xml", ".svg"), ("text/plain", ".txt")):
+                    ("image/svg+xml", ".svg"), ("text/plain", ".txt"), ("image/png", ".png"),
+                    ("application/manifest+json", ".webmanifest")):
     mimetypes.add_type(_type, _ext)
 
 UPGRADE_MESSAGE = (
@@ -38,6 +39,14 @@ async def admin_page(request: Request) -> Response:
     if not index.exists():  # pragma: no cover - only in a broken install
         return PlainTextResponse("Admin UI files are missing from this installation.", status_code=500)
     return FileResponse(index, media_type="text/html; charset=utf-8")
+
+
+async def service_worker(request: Request) -> Response:
+    """The installed app's service worker. It lives at /admin/sw.js rather
+    than under /admin/static/ because a worker only controls pages at or
+    below its own path."""
+    return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript",
+                        headers={"Cache-Control": "no-cache"})
 
 
 async def root(request: Request) -> Response:
@@ -65,6 +74,7 @@ def create_app(settings: Optional[Settings] = None) -> Starlette:
         Route("/healthz", health, methods=["GET"]),
         Route("/admin", root, methods=["GET"]),
         Route("/admin/", admin_page, methods=["GET"]),
+        Route("/admin/sw.js", service_worker, methods=["GET"]),
         Mount("/admin/static", app=StaticFiles(directory=STATIC_DIR, check_dir=False), name="static"),
         *api_device.routes,
         *api_admin.routes,

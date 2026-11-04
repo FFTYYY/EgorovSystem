@@ -1,6 +1,9 @@
 // DOM helpers. The CSP forbids turning strings into HTML (Trusted Types with
 // no policy), so every node is built with createElement and textContent.
 
+import { isMobile } from "./layout.js";
+import { swipeToDismiss } from "./swipe.js";
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 function apply(el, props) {
@@ -60,6 +63,17 @@ const ICONS = {
   menu: ["M4 7h16", "M4 12h16", "M4 17h16"],
   terminal: ["M3 5h18v14H3z", "M7 10l3 2-3 2", "M12 15h5"],
   grip: ["M9 6h.01", "M15 6h.01", "M9 12h.01", "M15 12h.01", "M9 18h.01", "M15 18h.01"],
+  dots: ["M5 12h.01", "M12 12h.01", "M19 12h.01"],
+  book: ["M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5", "M12 6.5c2-1.5 5-2 8.5-1.5v13c-3.5-.5-6.5 0-8.5 1.5",
+    "M12 6.5v13"],
+  key: ["M8.5 19.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M11.3 12.7L19.5 4.5", "M16 8l2.5 2.5", "M13.8 10.2l2 2"],
+  laptop: ["M5 6h14v9H5z", "M3 18.5h18"],
+  ledger: ["M6 3.5h8.5l3.5 3.5v13.5H6z", "M14 3.5V7.5h4", "M9 12h6", "M9 15.5h6"],
+  sliders: ["M4 7h7", "M17 7h3", "M14 9.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4z", "M4 17h3", "M13 17h7",
+    "M10 19.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4z"],
+  chevron: ["M9.5 6l6 6-6 6"],
+  install: ["M12 4v11", "M7.5 10.5L12 15l4.5-4.5", "M5 19.5h14"],
+  sort: ["M8 4.5v15", "M4.5 8L8 4.5 11.5 8", "M16 19.5v-15", "M12.5 16l3.5 3.5 3.5-3.5"],
 };
 
 export function icon(name, label) {
@@ -121,42 +135,100 @@ export function hoverTip(trigger, build) {
 
 let toastHost;
 
+// The toasts live in a popover so that they show above an open dialog: every
+// new toast re-opens it, which puts it on top of the top layer.
+function raiseToasts() {
+  if (typeof toastHost.showPopover !== "function") return;
+  if (toastHost.matches(":popover-open")) toastHost.hidePopover();
+  toastHost.showPopover();
+}
+
 export function toast(message, kind = "info") {
   if (!toastHost) {
-    toastHost = h("div", { class: "toasts", role: "status", "aria-live": "polite" });
+    toastHost = h("div", { class: "toasts", role: "status", "aria-live": "polite", popover: "manual" });
     document.body.append(toastHost);
   }
   const node = h("div", { class: ["toast", `toast-${kind}`] }, message);
   toastHost.append(node);
+  raiseToasts();
   setTimeout(() => node.classList.add("leaving"), 3600);
-  setTimeout(() => node.remove(), 4000);
+  setTimeout(() => {
+    node.remove();
+    if (!toastHost.children.length && typeof toastHost.hidePopover === "function" && toastHost.matches(":popover-open")) {
+      toastHost.hidePopover();
+    }
+  }, 4000);
+}
+
+// Every open modal's close function, so that locking the vault can take
+// decrypted values off the screen.
+const openModals = new Set();
+
+export function closeModals() {
+  for (const close of Array.from(openModals)) close(undefined, false);
+}
+
+// Let a closing dialog play its leaving animation (phones slide sheets down),
+// then remove it.
+function removeDialog(dialog, animate) {
+  let gone = false;
+  const finish = () => {
+    if (gone) return;
+    gone = true;
+    if (dialog.open) dialog.close();
+    dialog.remove();
+  };
+  if (!animate) return finish();
+  dialog.classList.add("is-leaving");
+  const name = getComputedStyle(dialog).animationName;
+  if (!name || name === "none") return finish();
+  dialog.addEventListener("animationend", (event) => { if (event.target === dialog) finish(); });
+  setTimeout(finish, 400);
+}
+
+function outside(event, el) {
+  const r = el.getBoundingClientRect();
+  return event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom;
 }
 
 // A modal built on <dialog>. `build(close)` returns the body; `close(value)`
-// resolves the promise. Escape and the backdrop close with undefined.
-export function modal({ title, wide = false, build, dismissable = true }) {
+// resolves the promise. Escape and the close button resolve with undefined.
+// `heading` replaces the title text in the header (the title stays the label).
+// A `sheet` only shows things, so a tap on the backdrop or a swipe down on its
+// header also closes it. Forms never close that way: a stray tap must not
+// discard a half-filled form.
+export function modal({ title, heading, wide = false, sheet = false, build, dismissable = true }) {
   return new Promise((resolve) => {
-    const dialog = h("dialog", { class: ["modal", wide && "modal-wide"], "aria-label": title });
+    const dialog = h("dialog", { class: ["modal", wide && "modal-wide", sheet && "modal-sheet"], "aria-label": title });
     let done = false;
-    const close = (value) => {
+    const close = (value, animate = true) => {
       if (done) return;
       done = true;
-      dialog.close();
-      dialog.remove();
+      openModals.delete(close);
+      removeDialog(dialog, animate);
       resolve(value);
     };
     const header = h("header", { class: "modal-head" },
-      h("h2", null, title),
+      h("h2", null, heading || title),
       dismissable && h("button", { class: "icon-button", type: "button", onclick: () => close(undefined) }, icon("x", "关闭")));
     dialog.append(header, build(close));
     dialog.addEventListener("cancel", (event) => {
       event.preventDefault();
       if (dismissable) close(undefined);
     });
-    // No close on backdrop clicks: a stray click must not discard a half-filled form.
+    if (sheet && dismissable) {
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog && outside(event, dialog)) close(undefined);
+      });
+      swipeToDismiss(dialog, header, () => close(undefined, false));
+    }
+    openModals.add(close);
     document.body.append(dialog);
     dialog.showModal();
-    const first = dialog.querySelector("[autofocus], input, textarea, select, .modal-body button");
+    // On phones, focusing a text field would pop up the keyboard before the
+    // user asked for it, so only an explicit autofocus gets focus there.
+    const first = dialog.querySelector("[autofocus]")
+      || (isMobile() ? null : dialog.querySelector("input, textarea, select, .modal-body button"));
     if (first) first.focus();
   });
 }
@@ -225,6 +297,12 @@ export function formatTime(ts) {
   if (!ts) return "—";
   const d = new Date(ts * 1000);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function formatClock(ts) {
+  if (!ts) return "—";
+  const d = new Date(ts * 1000);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export function formatDate(ts) {

@@ -25,10 +25,11 @@ CSP = "; ".join([
     "base-uri 'none'",
     "form-action 'none'",
     "frame-ancestors 'none'",
-    # The admin UI never turns strings into HTML, so every DOM XSS sink can
-    # be switched off outright.
+    # The admin UI never turns strings into HTML, so every DOM XSS sink stays
+    # switched off. The one policy allowed can only produce the URL of the
+    # service worker (see static/js/pwa.js), which registering it requires.
     "require-trusted-types-for 'script'",
-    "trusted-types 'none'",
+    "trusted-types egorov-sw",
 ])
 
 BASE_HEADERS = [

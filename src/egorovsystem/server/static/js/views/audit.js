@@ -1,7 +1,8 @@
 // The ledger: who read or changed what, and when.
 
 import { api } from "../api.js";
-import { busy, clear, formatTime, h } from "../dom.js";
+import { busy, clear, formatClock, formatDate, formatTime, h } from "../dom.js";
+import { isMobile } from "../layout.js";
 
 const ACTIONS = {
   "variable.read": "读取变量",
@@ -56,12 +57,64 @@ export function ledgerRow(entry, devices, compact = false) {
     compact ? null : h("td", { class: "ledger-ip" }, entry.ip || ""));
 }
 
+function ledgerHead(compact) {
+  return h("thead", null, h("tr", null, h("th", null, "时间"), h("th", null, "谁"), h("th", null, "做了什么"),
+    h("th", null, "对象"), compact ? null : h("th", null, "IP")));
+}
+
+function dayLabel(ts) {
+  const day = new Date(ts * 1000);
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (day.toDateString() === today.toDateString()) return "今天";
+  if (day.toDateString() === yesterday.toDateString()) return "昨天";
+  return formatDate(ts);
+}
+
+// One entry in the phone ledger: what and on what, then who and from where.
+function ledgerItem(entry, devices) {
+  return h("li", { class: ["m-entry", !entry.ok && "is-failed"] },
+    h("div", { class: "m-entry-what" }, ACTIONS[entry.action] || entry.action,
+      entry.ok ? null : h("span", { class: "tag tag-danger" }, "失败"),
+      entry.target ? h("code", null, entry.target) : null),
+    h("time", { class: "m-entry-time", datetime: new Date(entry.ts * 1000).toISOString(), title: formatTime(entry.ts) },
+      formatClock(entry.ts)),
+    h("div", { class: "m-entry-who" }, [actorName(entry.actor, devices), entry.ip].filter(Boolean).join(" · ")));
+}
+
+// A ledger that grows as older entries load: a table on desktop, a list
+// grouped by day on phones.
+function ledgerView(devices, compact) {
+  if (isMobile()) {
+    const list = h("ul", { class: "m-ledger" });
+    let day = null;
+    return {
+      node: list,
+      size: () => list.querySelectorAll(".m-entry").length,
+      append(entries) {
+        for (const entry of entries) {
+          const label = dayLabel(entry.ts);
+          if (label !== day) {
+            day = label;
+            list.append(h("li", { class: "m-day" }, label));
+          }
+          list.append(ledgerItem(entry, devices));
+        }
+      },
+    };
+  }
+  const rows = h("tbody");
+  return {
+    node: h("div", { class: "table-wrap" }, h("table", { class: "ledger" }, ledgerHead(compact), rows)),
+    size: () => rows.children.length,
+    append(entries) { for (const entry of entries) rows.append(ledgerRow(entry, devices, compact)); },
+  };
+}
+
 export function ledger(entries, devices, compact = false) {
-  return h("div", { class: "table-wrap" },
-    h("table", { class: "ledger" },
-      h("thead", null, h("tr", null, h("th", null, "时间"), h("th", null, "谁"), h("th", null, "做了什么"),
-        h("th", null, "对象"), compact ? null : h("th", null, "IP"))),
-      h("tbody", null, entries.map((entry) => ledgerRow(entry, devices, compact)))));
+  const view = ledgerView(devices, compact);
+  view.append(entries);
+  return view.node;
 }
 
 export async function deviceMap() {
@@ -100,27 +153,22 @@ export async function renderAudit(page, ctx) {
     const filter = FILTERS.find((f) => f.key === key);
     clear(body);
     let before = null;
-    const rows = h("tbody");
-    const table = h("div", { class: "table-wrap" },
-      h("table", { class: "ledger" },
-        h("thead", null, h("tr", null, h("th", null, "时间"), h("th", null, "谁"), h("th", null, "做了什么"),
-          h("th", null, "对象"), h("th", null, "IP"))),
-        rows));
+    const view = ledgerView(devices, false);
     const more = h("button", { class: "button", type: "button" }, "加载更早的记录");
     const empty = h("p", { class: "empty" }, "没有符合条件的记录。");
     empty.hidden = true;
-    body.append(table, empty, h("div", { class: "more-row" }, more));
+    body.append(view.node, empty, h("div", { class: "more-row" }, more));
 
     async function load() {
       const query = new URLSearchParams({ limit: "60", ...filter.query });
       if (before) query.set("before", String(before));
       const data = await api("GET", `/audit?${query}`);
       if (active !== key || !ctx.isCurrent()) return;
-      for (const entry of data.entries) rows.append(ledgerRow(entry, devices));
+      view.append(data.entries);
       before = data.next_before;
       more.hidden = !before;
-      empty.hidden = rows.children.length > 0;
-      table.hidden = rows.children.length === 0;
+      empty.hidden = view.size() > 0;
+      view.node.hidden = view.size() === 0;
     }
     more.addEventListener("click", () => busy(more, "正在加载…", load));
     await load();

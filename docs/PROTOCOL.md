@@ -18,6 +18,13 @@ Strict CSP with Trusted Types, Cloudflare Access in front of `/admin`, and the
 CLI tools reduce this risk but cannot remove it. Devices trust the commands they
 download (by request of the project owner).
 
+The admin UI can be installed as an app (a PWA). Its service worker, served at
+`/admin/sw.js`, never handles `/api/` requests and keeps only the interface
+files, fetched network-first, so it holds no vault data and an online launch
+always runs what the server currently serves. The CSP's Trusted Types allow a
+single policy, `egorov-sw`, which can produce only the URL `sw.js`; every HTML
+sink stays disabled.
+
 ## Encodings
 
 * Binary values on the wire use **unpadded base64url** (`b64`).

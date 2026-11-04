@@ -161,12 +161,23 @@ export function functionRefs(fn) {
 
 const IDLE_LIMIT_MS = 15 * 60 * 1000;
 let idleTimer = null;
+let lastActive = 0;
 let onIdle = () => {};
 
 function resetIdle() {
   if (!isUnlocked()) return;
+  lastActive = Date.now();
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => onIdle(), IDLE_LIMIT_MS);
+}
+
+// Phones pause timers while the app is in the background, so the timer alone
+// could leave the vault open for hours. Check the clock when it comes back.
+function checkOnReturn() {
+  if (document.visibilityState === "visible" && isUnlocked() && Date.now() - lastActive >= IDLE_LIMIT_MS) {
+    clearTimeout(idleTimer);
+    onIdle();
+  }
 }
 
 export function watchIdle(handler) {
@@ -174,6 +185,7 @@ export function watchIdle(handler) {
   for (const event of ["pointerdown", "keydown", "wheel", "touchstart"]) {
     window.addEventListener(event, resetIdle, { passive: true });
   }
+  document.addEventListener("visibilitychange", checkOnReturn);
   resetIdle();
 }
 

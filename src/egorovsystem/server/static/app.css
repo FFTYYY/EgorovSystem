@@ -377,6 +377,10 @@ dialog::backdrop { background: rgba(6, 8, 7, 0.74); backdrop-filter: blur(2px); 
 .modal-body p { margin: 0; }
 .modal-subhead { margin: 6px 0 0; font-family: var(--display); font-weight: 400; font-size: 21px; }
 .modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+/* sheets follow the finger when dragged down by the header (swipe.js) */
+dialog.modal-sheet { transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1); }
+dialog.modal-sheet.is-dragged { transition: none; }
+dialog.modal-sheet.is-dismissed { transform: translateY(100vh) !important; transition: transform 0.18s ease-in; }
 
 .token-box { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px; border: 1px dashed var(--brass-deep); border-radius: var(--radius); background: var(--field); }
 .token { flex: 1 1 260px; font-size: 14px; color: var(--brass-bright); word-break: break-all; }
@@ -429,7 +433,8 @@ li.drop-after { box-shadow: inset 0 -2px 0 var(--brass); }
 
 /* ------------------------------------------------------------ toasts */
 
-.toasts { position: fixed; right: 24px; bottom: 24px; align-items: flex-end; z-index: 1000; display: flex; flex-direction: column; gap: 8px; max-width: calc(100vw - 48px); }
+/* The host is a popover (so toasts show above dialogs); undo the popover defaults. */
+.toasts { position: fixed; inset: auto 24px 24px auto; width: auto; height: auto; margin: 0; padding: 0; border: 0; overflow: visible; background: transparent; color: inherit; align-items: flex-end; z-index: 1000; display: flex; flex-direction: column; gap: 8px; max-width: calc(100vw - 48px); }
 .toast { padding: 10px 16px; border: 1px solid var(--line-strong); border-left: 3px solid var(--brass); background: var(--raised); color: var(--paper); font-size: 15px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45); transition: opacity 0.4s, transform 0.4s; }
 .toast-error { border-left-color: var(--oxblood); }
 .toast.leaving { opacity: 0; transform: translateY(6px); }

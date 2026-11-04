@@ -1,5 +1,8 @@
 import { api, setSignedOutHandler } from "./api.js";
-import { clear, h, icon, seal, toast } from "./dom.js";
+import { clear, closeModals, h, toast } from "./dom.js";
+import { isMobile, onLayoutChange } from "./layout.js";
+import { initPwa } from "./pwa.js";
+import { buildShell } from "./shell.js";
 import { applySession, isUnlocked, itemsOf, loadItems, lock, session, syncRefs, watchIdle } from "./state.js";
 import { renderFatal, renderLogin, renderUninitialized, renderUnlock } from "./views/login.js";
 import { renderOverview } from "./views/overview.js";
@@ -11,18 +14,20 @@ import { renderSettings } from "./views/settings.js";
 
 const root = document.getElementById("app");
 
+// `tab`: has its own tab in the phone layout; the rest sit under "更多".
 const ROUTES = [
-  { path: "overview", label: "总览", render: renderOverview },
-  { path: "variables", label: "变量", render: renderVariables, count: () => itemsOf("variable").length },
-  { path: "functions", label: "函数", render: renderFunctions, count: () => itemsOf("function").length },
-  { path: "devices", label: "设备", render: renderDevices, count: () => deviceCount },
-  { path: "audit", label: "记录", render: renderAudit },
-  { path: "settings", label: "设置", render: renderSettings },
+  { path: "overview", label: "总览", icon: "book", tab: true, render: renderOverview },
+  { path: "variables", label: "变量", icon: "key", tab: true, render: renderVariables, count: () => itemsOf("variable").length },
+  { path: "functions", label: "函数", icon: "terminal", tab: true, render: renderFunctions, count: () => itemsOf("function").length },
+  { path: "devices", label: "设备", icon: "laptop", tab: true, render: renderDevices, count: () => deviceCount },
+  { path: "audit", label: "记录", icon: "ledger", render: renderAudit },
+  { path: "settings", label: "设置", icon: "sliders", render: renderSettings },
 ];
 
 let deviceCount = null;
+let shell = null;
 let page = null;
-let navLinks = new Map();
+let shownPath = null;
 let renderToken = 0;
 
 function currentRoute() {
@@ -32,12 +37,7 @@ function currentRoute() {
 }
 
 function refreshNav() {
-  for (const route of ROUTES) {
-    const link = navLinks.get(route.path);
-    if (!link) continue;
-    const count = link.querySelector(".toc-count");
-    if (count && route.count) count.textContent = route.count() ?? "";
-  }
+  if (shell) shell.refresh();
 }
 
 const ctx = {
@@ -47,37 +47,17 @@ const ctx = {
 };
 
 function renderShell() {
-  navLinks = new Map();
-  const nav = h("nav", { class: "toc", "aria-label": "目录" },
-    ROUTES.map((route) => {
-      const link = h("a", { class: "toc-item", href: `#/${route.path}` },
-        h("span", { class: "toc-label" }, route.label),
-        route.count && h("span", { class: "toc-leader", "aria-hidden": "true" }),
-        route.count && h("span", { class: "toc-count" }, ""));
-      navLinks.set(route.path, link);
-      return link;
-    }));
-  page = h("main", { class: "page", id: "page", tabindex: "-1" });
-  const shell = h("div", { class: "shell" },
-    h("aside", { class: "sidebar" },
-      h("a", { class: "brand", href: "#/overview" }, seal(34), h("span", { class: "brand-name" }, "Egorov")),
-      nav,
-      h("div", { class: "sidebar-foot" },
-        h("p", { class: "who" }, h("span", { class: "who-label" }, "管理员"), h("span", { class: "who-name" }, session.username)),
-        h("div", { class: "sidebar-actions" },
-          h("button", { class: "button button-quiet", type: "button", onclick: () => lockNow() }, icon("lock"), "锁定"),
-          h("button", { class: "button button-quiet", type: "button", onclick: () => signOut() }, icon("out"), "退出")))),
-    page);
-  clear(root).append(shell);
-  refreshNav();
+  shell = buildShell(root, { routes: ROUTES, mobile: isMobile(), onLock: () => lockNow(), onSignOut: () => signOut() });
+  page = shell.page;
 }
 
 async function route() {
   if (!isUnlocked() || !page) return;
   const { route: current, params } = currentRoute();
-  for (const [path, link] of navLinks) {
-    if (path === current.path) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
+  shell.setCurrent(current.path);
+  if (current.path !== shownPath) {
+    shownPath = current.path;
+    window.scrollTo(0, 0);
   }
   document.title = `${current.label} · Egorov`;
   const token = ++renderToken;
@@ -98,27 +78,31 @@ async function enterApp() {
   // existed have none), so function grants also cover those variables.
   syncRefs().catch(() => {});
   renderShell();
-  watchIdle(() => {
-    lock();
-    showUnlock("闲置超过 15 分钟，保险库已自动锁定。");
-  });
+  watchIdle(() => lockNow("闲置超过 15 分钟，保险库已自动锁定。"));
   api("GET", "/devices").then(({ devices }) => ctx.setDeviceCount(devices.length)).catch(() => {});
   await route();
 }
 
-function showLogin(message) {
+// Leave the unlocked app: dialogs may show decrypted values, so they go too.
+function leaveApp() {
+  closeModals();
+  lock();
+  shell = null;
   page = null;
+  shownPath = null;
+}
+
+function showLogin(message) {
   renderLogin(root, { message, onDone: enterApp });
 }
 
 function showUnlock(message) {
-  page = null;
   renderUnlock(root, { message, onDone: enterApp, onSignOut: () => signOut() });
 }
 
-function lockNow() {
-  lock();
-  showUnlock();
+function lockNow(message) {
+  leaveApp();
+  showUnlock(message);
 }
 
 async function signOut() {
@@ -127,19 +111,25 @@ async function signOut() {
   } catch {
     // The session may already be gone; signing out locally is what matters.
   }
-  lock();
+  leaveApp();
   showLogin();
   toast("已退出登录。");
 }
 
 async function boot() {
+  initPwa();
   setSignedOutHandler(() => {
     if (!session.username) return;
-    lock();
+    leaveApp();
     session.username = null;
     showLogin("登录已过期，请重新登录。");
   });
   window.addEventListener("hashchange", () => route());
+  onLayoutChange(() => {
+    if (!isUnlocked() || !page) return;
+    renderShell();
+    route();
+  });
   let status;
   try {
     status = await api("GET", "/status");

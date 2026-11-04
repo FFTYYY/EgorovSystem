@@ -3,7 +3,10 @@
 
 import * as c from "../crypto.js";
 import { api } from "../api.js";
-import { busy, clear, copyText, field, formatDate, formError, h, icon, modal, timeTag, toast } from "../dom.js";
+import { ago, busy, clear, copyText, field, formatDate, formError, h, icon, modal, timeTag, toast } from "../dom.js";
+import { isMobile } from "../layout.js";
+import * as m from "../mobile.js";
+import { install, installMode } from "../pwa.js";
 import { loadItems, proveCurrentPassword, session, vault } from "../state.js";
 
 function passwordProblem(password) {
@@ -285,17 +288,27 @@ export async function renderSettings(page, ctx) {
   const rerender = () => { clear(page); renderSettings(page, ctx); };
   const account = overview.account;
 
-  const sessionRows = h("tbody", null, sessions.sessions.map((s) => h("tr", null,
-    h("td", null, describeAgent(s.user_agent), s.current ? h("span", { class: "tag tag-ok" }, "当前") : null),
-    h("td", { class: "ledger-ip" }, s.ip || ""),
-    h("td", null, "登录于 ", timeTag(s.created_at)),
-    h("td", null, "最后活动 ", timeTag(s.last_seen_at)),
-    h("td", { class: "cell-actions" }, s.current ? null : h("button", { class: "button button-quiet", type: "button",
-      onclick: async () => {
-        await api("DELETE", `/sessions/${s.id}`);
-        toast("已让该会话下线。");
-        rerender();
-      } }, "下线")))));
+  const signOff = async (s) => {
+    await api("DELETE", `/sessions/${s.id}`);
+    toast("已让该会话下线。");
+    rerender();
+  };
+  const offButton = (s) => (s.current ? null
+    : h("button", { class: "button button-quiet", type: "button", onclick: () => signOff(s) }, "下线"));
+  const sessionList = isMobile()
+    ? h("ul", { class: "m-list setting-table" }, sessions.sessions.map((s) => m.row({
+      head: [h("span", { class: "m-row-title is-plain" }, describeAgent(s.user_agent)),
+        s.current ? h("span", { class: "tag tag-ok" }, "当前") : null],
+      lines: [m.meta(`登录于 ${ago(s.created_at)}`, `最后活动 ${ago(s.last_seen_at)}`), m.meta(s.ip)],
+      quick: offButton(s),
+    })))
+    : h("div", { class: "table-wrap setting-table" }, h("table", { class: "catalog compact" }, h("tbody", null,
+      sessions.sessions.map((s) => h("tr", null,
+        h("td", null, describeAgent(s.user_agent), s.current ? h("span", { class: "tag tag-ok" }, "当前") : null),
+        h("td", { class: "ledger-ip" }, s.ip || ""),
+        h("td", null, "登录于 ", timeTag(s.created_at)),
+        h("td", null, "最后活动 ", timeTag(s.last_seen_at)),
+        h("td", { class: "cell-actions" }, offButton(s)))))));
   const others = sessions.sessions.filter((s) => !s.current).length;
 
   page.append(
@@ -318,7 +331,10 @@ export async function renderSettings(page, ctx) {
         toast("其他会话已全部下线。");
         rerender();
       } }, "让其他会话下线") : null,
-      h("div", { class: "table-wrap setting-table" }, h("table", { class: "catalog compact" }, sessionRows))),
+      sessionList),
+    installMode() ? settingBlock("安装应用",
+      ["安装到主屏幕或桌面后，可以像应用一样打开，没有浏览器的地址栏。"],
+      h("button", { class: "button", type: "button", onclick: () => install() }, icon("install"), "安装")) : null,
     settingBlock("轮换保险库密钥",
       ["怀疑某个设备令牌泄露、并且想让它以前拿到的密钥也失效时使用。会重新加密所有条目，删除所有设备令牌，并生成新的恢复密钥。",
         overview.vault.vault_rotated_at ? `上次轮换于 ${formatDate(overview.vault.vault_rotated_at)}。` : "还没有轮换过。"],
