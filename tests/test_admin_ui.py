@@ -96,7 +96,7 @@ def test_service_worker_controls_the_admin_page(client):
     response = client.get("/admin/sw.js")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/javascript")
-    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["cache-control"] == "no-store"
     # It precaches this release's fingerprinted files, under a cache of its own.
     assert f'const ASSETS = "{asset_base(client)}";' in response.text
 

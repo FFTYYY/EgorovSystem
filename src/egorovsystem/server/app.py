@@ -52,7 +52,9 @@ async def service_worker(request: Request) -> Response:
     worker = request.app.state.assets.worker
     if worker is None:  # pragma: no cover - only in a broken install
         return PlainTextResponse(MISSING_UI, status_code=500)
-    return Response(worker, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+    # no-store, not no-cache: Cloudflare's Browser Cache TTL rewrites no-cache
+    # into a four-hour max-age, which would delay worker updates.
+    return Response(worker, media_type="text/javascript", headers={"Cache-Control": "no-store"})
 
 
 async def root(request: Request) -> Response:
