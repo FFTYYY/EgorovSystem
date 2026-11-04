@@ -85,6 +85,25 @@ def _sign_in(context, url):
     return page, errors
 
 
+STRAY_TEXT = """() => {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const bad = [];
+    while (walker.nextNode()) {
+        const text = walker.currentNode.textContent.trim();
+        if (["null", "undefined", "false", "NaN"].includes(text)) bad.push(text);
+    }
+    return bad;
+}"""
+
+
+def _assert_pages_clean(page, url):
+    # Optional parts are written as `cond ? node : null`; none may leak as text.
+    for route in ROUTES:
+        page.goto(f"{url}#/{route}")
+        page.wait_for_timeout(300)
+        assert page.evaluate(STRAY_TEXT) == [], route
+
+
 def test_phone_layout_fits_the_screen(live_server, browser):
     context = browser.new_context(**PHONE)
     page, errors = _sign_in(context, live_server)
@@ -94,6 +113,7 @@ def test_phone_layout_fits_the_screen(live_server, browser):
         page.wait_for_timeout(300)
         overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
         assert overflow <= 0, f"{route} is {overflow}px wider than the screen"
+    _assert_pages_clean(page, live_server)
     assert errors == []
     context.close()
 
@@ -121,6 +141,7 @@ def test_desktop_keeps_the_sidebar(live_server, browser):
     assert page.locator(".sidebar").count() == 1 and page.locator(".tabbar").count() == 0
     page.goto(f"{live_server}#/variables")
     page.wait_for_selector("table.catalog tbody tr")
+    _assert_pages_clean(page, live_server)
     assert errors == []
     context.close()
 

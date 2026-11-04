@@ -1,7 +1,7 @@
 // The ledger: who read or changed what, and when.
 
 import { api } from "../api.js";
-import { busy, clear, formatClock, formatDate, formatTime, h } from "../dom.js";
+import { appendChildren, busy, clear, formatClock, formatDate, formatTime, h } from "../dom.js";
 import { isMobile } from "../layout.js";
 
 const ACTIONS = {
@@ -140,7 +140,7 @@ export async function renderAudit(page, ctx) {
   const body = h("div");
   const filterBar = h("div", { class: "segmented filter-bar", role: "radiogroup", "aria-label": "筛选" });
 
-  page.append(
+  appendChildren(page,
     h("header", { class: "page-head" },
       h("div", null,
         h("h1", null, "记录"),

@@ -3,7 +3,7 @@
 // are rows with drag handles; on phones they are tappable rows that open a
 // sheet, with a reorder mode instead of drag handles.
 
-import { clear, h, icon, toast } from "../dom.js";
+import { appendChildren, clear, h, icon, toast } from "../dom.js";
 import { isMobile } from "../layout.js";
 import * as m from "../mobile.js";
 import { focusHandle, makeSortable } from "../sortable.js";
@@ -86,7 +86,7 @@ export function renderCatalog(page, ctx, spec) {
   }
   toolbar.append(count);
 
-  page.append(
+  appendChildren(page,
     h("header", { class: "page-head" },
       h("div", null, h("h1", null, spec.title), h("p", { class: "page-lead" }, spec.lead)),
       h("button", { class: "button button-primary", type: "button", onclick: () => spec.create(changed) },

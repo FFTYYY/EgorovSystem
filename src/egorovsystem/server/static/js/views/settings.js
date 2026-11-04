@@ -3,7 +3,7 @@
 
 import * as c from "../crypto.js";
 import { api } from "../api.js";
-import { ago, busy, clear, copyText, field, formatDate, formatTime, formError, h, icon, modal, timeTag, toast } from "../dom.js";
+import { ago, appendChildren, busy, clear, copyText, field, formatDate, formatTime, formError, h, icon, modal, timeTag, toast } from "../dom.js";
 import { isMobile } from "../layout.js";
 import * as m from "../mobile.js";
 import { install, installMode } from "../pwa.js";
@@ -328,7 +328,7 @@ export async function renderSettings(page, ctx) {
         h("td", { class: "cell-actions" }, offButton(s)))))));
   const others = sessions.sessions.filter((s) => !s.current).length;
 
-  page.append(
+  appendChildren(page,
     h("header", { class: "page-head" }, h("div", null, h("h1", null, "设置"))),
     settingBlock("主密码",
       [`登录后台并解锁保险库都靠它。上次修改于 ${formatDate(account.password_changed_at)}。`],

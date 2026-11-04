@@ -2,7 +2,7 @@
 
 import * as c from "../crypto.js";
 import { api } from "../api.js";
-import { ago, busy, clear, confirmAction, copyText, field, formError, formatDate, formatTime, h, icon, modal, timeTag, toast } from "../dom.js";
+import { ago, appendChildren, busy, clear, confirmAction, copyText, field, formatDate, formatTime, formError, h, icon, modal, timeTag, toast } from "../dom.js";
 import { isMobile } from "../layout.js";
 import * as m from "../mobile.js";
 import { session } from "../state.js";
@@ -274,7 +274,7 @@ export async function renderDevices(page, ctx) {
     empty.hidden = devices.length !== 0;
   }
 
-  page.append(
+  appendChildren(page,
     h("header", { class: "page-head" },
       h("div", null, h("h1", null, "设备"),
         h("p", { class: "page-lead" }, "每台机器一个令牌。令牌只在创建时显示一次，服务器只保存它的哈希，无法用它解密。")),

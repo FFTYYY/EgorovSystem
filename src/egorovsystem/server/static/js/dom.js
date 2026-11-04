@@ -25,6 +25,13 @@ function append(el, children) {
   }
 }
 
+// Element.append() writes null and false as text ("null"); this skips them,
+// like h() does, so optional parts can be written as `cond ? node : null`.
+export function appendChildren(el, ...children) {
+  append(el, children);
+  return el;
+}
+
 export function h(tag, props, ...children) {
   const el = document.createElement(tag);
   apply(el, props);

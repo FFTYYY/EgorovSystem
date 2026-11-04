@@ -1,7 +1,7 @@
 // Overview: a few sentences about the vault instead of a wall of numbers.
 
 import { api } from "../api.js";
-import { h } from "../dom.js";
+import { appendChildren, h } from "../dom.js";
 import { deviceMap, ledger } from "./audit.js";
 
 function attention(text, label, onClick) {
@@ -37,7 +37,7 @@ export async function renderOverview(page, ctx) {
   }
 
   const host = location.host;
-  page.append(
+  appendChildren(page,
     h("header", { class: "page-head" }, h("div", null, h("h1", null, "总览"))),
     summary,
     items.length ? h("section", { class: "block" }, h("h2", null, "需要处理"), h("ul", { class: "attention" }, items)) : null,
