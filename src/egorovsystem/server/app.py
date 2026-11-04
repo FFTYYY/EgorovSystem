@@ -14,6 +14,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import api_admin, api_device
+from .assets import AdminAssets, ImmutableFiles
 from .config import Settings
 from .db import Database
 from .security import RateLimiter, SecurityHeadersMiddleware
@@ -34,19 +35,24 @@ UPGRADE_MESSAGE = (
 )
 
 
+MISSING_UI = "Admin UI files are missing from this installation."
+
+
 async def admin_page(request: Request) -> Response:
-    index = STATIC_DIR / "index.html"
-    if not index.exists():  # pragma: no cover - only in a broken install
-        return PlainTextResponse("Admin UI files are missing from this installation.", status_code=500)
-    return FileResponse(index, media_type="text/html; charset=utf-8")
+    index = request.app.state.assets.index
+    if index is None:  # pragma: no cover - only in a broken install
+        return PlainTextResponse(MISSING_UI, status_code=500)
+    return Response(index, media_type="text/html; charset=utf-8")
 
 
 async def service_worker(request: Request) -> Response:
     """The installed app's service worker. It lives at /admin/sw.js rather
     than under /admin/static/ because a worker only controls pages at or
     below its own path."""
-    return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript",
-                        headers={"Cache-Control": "no-cache"})
+    worker = request.app.state.assets.worker
+    if worker is None:  # pragma: no cover - only in a broken install
+        return PlainTextResponse(MISSING_UI, status_code=500)
+    return Response(worker, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
 
 async def root(request: Request) -> Response:
@@ -69,12 +75,15 @@ def create_app(settings: Optional[Settings] = None) -> Starlette:
     if database.is_initialized():
         database.migrate()  # adds new columns in place; never drops data
 
+    assets = AdminAssets(STATIC_DIR)
     routes = [
         Route("/", root, methods=["GET"]),
         Route("/healthz", health, methods=["GET"]),
         Route("/admin", root, methods=["GET"]),
         Route("/admin/", admin_page, methods=["GET"]),
         Route("/admin/sw.js", service_worker, methods=["GET"]),
+        Mount(f"/admin/{assets.base.rstrip('/')}", app=ImmutableFiles(directory=STATIC_DIR, check_dir=False), name="assets"),
+        # Unversioned paths keep working, for anything that still points at them.
         Mount("/admin/static", app=StaticFiles(directory=STATIC_DIR, check_dir=False), name="static"),
         *api_device.routes,
         *api_admin.routes,
@@ -88,6 +97,7 @@ def create_app(settings: Optional[Settings] = None) -> Starlette:
         middleware=[Middleware(SecurityHeadersMiddleware, trust_proxy=settings.trust_proxy)],
     )
     app.state.settings = settings
+    app.state.assets = assets
     app.state.db = database
     app.state.limiter = RateLimiter()
     return app

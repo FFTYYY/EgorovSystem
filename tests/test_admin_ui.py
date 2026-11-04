@@ -8,17 +8,42 @@ from pathlib import Path
 STATIC = Path(__file__).resolve().parents[1] / "src" / "egorovsystem" / "server" / "static"
 
 
+def asset_base(client):
+    match = re.search(r'src="(assets/[0-9a-f]{12}/)js/main\.js"', client.get("/admin/").text)
+    assert match, "the admin page must load main.js from the fingerprinted directory"
+    return match.group(1)
+
+
 def test_admin_page_and_assets_are_served(client):
     page = client.get("/admin/")
     assert page.status_code == 200
+    assert page.headers["cache-control"] == "no-store"
+    base = asset_base(client)
     # data-cfasync="false" makes Cloudflare Rocket Loader leave the script alone,
     # so the zone-wide Rocket Loader setting does not matter.
-    assert '<script type="module" data-cfasync="false" src="static/js/main.js"></script>' in page.text
-    for path in ("static/app.css", "static/js/main.js", "static/js/crypto.js", "static/fonts/eb-garamond.woff2",
-                 "static/favicon.svg"):
-        response = client.get(f"/admin/{path}")
+    assert f'<script type="module" data-cfasync="false" src="{base}js/main.js"></script>' in page.text
+    assert '="static/' not in page.text
+    for path in ("app.css", "js/main.js", "js/crypto.js", "fonts/eb-garamond.woff2", "favicon.svg"):
+        response = client.get(f"/admin/{base}{path}")
         assert response.status_code == 200, path
-    assert client.get("/admin/static/js/main.js").headers["content-type"].startswith("text/javascript")
+        assert response.headers["cache-control"] == "public, max-age=31536000, immutable", path
+    assert client.get(f"/admin/{base}js/main.js").headers["content-type"].startswith("text/javascript")
+    # The old unversioned paths still work but always revalidate.
+    legacy = client.get("/admin/static/js/main.js")
+    assert legacy.status_code == 200 and legacy.headers["cache-control"] == "no-cache"
+    # Another release's directory is not served from this one.
+    assert client.get("/admin/assets/000000000000/js/main.js").status_code == 404
+
+
+def test_fingerprint_changes_with_any_file(tmp_path):
+    from egorovsystem.server.assets import fingerprint
+
+    (tmp_path / "js").mkdir()
+    (tmp_path / "js" / "a.js").write_text("one")
+    first = fingerprint(tmp_path)
+    assert fingerprint(tmp_path) == first
+    (tmp_path / "js" / "a.js").write_text("two")
+    assert fingerprint(tmp_path) != first
 
 
 def test_no_inline_script_or_style():
@@ -72,15 +97,18 @@ def test_service_worker_controls_the_admin_page(client):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/javascript")
     assert response.headers["cache-control"] == "no-cache"
+    # It precaches this release's fingerprinted files, under a cache of its own.
+    assert f'const ASSETS = "{asset_base(client)}";' in response.text
 
 
 def test_service_worker_stores_every_interface_file_and_nothing_else():
     source = (STATIC / "sw.js").read_text(encoding="utf-8")
-    listed = set(re.findall(r'^\s+"([^"]+)",$', source[source.index("const SHELL"):source.index("];")], re.M))
-    assert "./" in listed
+    assert 'const ASSETS = "static/";' in source  # the line the server rewrites
+    files = source[source.index("const FILES = ["):]
+    listed = set(re.findall(r'^\s+"([^"]+)",$', files[:files.index("];")], re.M))
     on_disk = {f"static/{p.relative_to(STATIC).as_posix()}" for p in STATIC.rglob("*")
                if p.suffix in {".js", ".css", ".woff2", ".webmanifest", ".svg"} and p.name != "sw.js"}
-    assert listed - {"./"} == on_disk
+    assert listed == on_disk
     # The API is never answered from the cache.
     assert "startsWith(scope.pathname)" in source
 

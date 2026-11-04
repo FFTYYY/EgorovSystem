@@ -7,12 +7,14 @@
 // server takes effect on the next load, and an offline launch still opens
 // the app (which then says it cannot reach the server).
 
-const CACHE = "egorov-shell-v1";
+// The server writes the current asset directory (assets/<hash>/) into the
+// next line when it serves this file, so every release gets its own cache.
+const ASSETS = "static/";
+const CACHE = `egorov-${ASSETS.replace(/[^A-Za-z0-9]+/g, "-")}`;
 
 // Everything the admin page loads. tests/test_admin_ui.py checks that this
 // list matches the files on disk.
-const SHELL = [
-  "./",
+const FILES = [
   "static/app.css",
   "static/mobile.css",
   "static/favicon.svg",
@@ -44,6 +46,7 @@ const SHELL = [
   "static/js/views/settings.js",
   "static/js/views/variables.js",
 ];
+const SHELL = ["./", ...FILES.map((file) => ASSETS + file.slice("static/".length))];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
